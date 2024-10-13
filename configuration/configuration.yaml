@@ -43,7 +43,7 @@ projection:
     guidance_type: PRIEST
     num_priest_iterations: 2
     use_obstacle_constraints: true
-    #   max_dynamic_obstacles: 10
+#   max_dynamic_obstacles: 10
     max_static_obstacles: 100
 #   padding: 1000
 live:
