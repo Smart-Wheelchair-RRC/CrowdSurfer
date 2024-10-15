@@ -14,10 +14,12 @@ vqvae:
     num_embeddings: 64
     embedding_dim: 4
     # hidden_channels: 96
-    checkpoint_path: vqvae/best_checkpoint/pytorch_model.bin
+    checkpoint_path: /home/wheelchair/results/vqvae/64_4_v9_best_priest/best_checkpoint
 pixelcnn:
     #   observation_embedding_dim: 32
-    checkpoint_path: pixelcnn/best_checkpoint/pytorch_model.bin
+    checkpoint_path: /home/wheelchair/results/pixelcnn2/64_4_v9_best_priest_w_vqvae_best_priest_rt_head/best_checkpoint
+scoring_network:
+    num_samples: 50
 trainer:
     results_directory: results
     batch_size: 4096
@@ -53,7 +55,7 @@ live:
     dynamic_obstacle_topic: /track_ped
     # point_cloud_topic: /pointcloud
     laser_scan_topic: /scan
-    velocity_command_topic: /cmd_vel
+    velocity_command_topic: mobile_base/cmd_vel
     goal_topic: /final_goal
     # subgoal_topic: /subgoal
     # path_topic: /trajectory
