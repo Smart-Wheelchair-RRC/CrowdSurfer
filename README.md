@@ -67,6 +67,26 @@ This mode visualizes the processed dataset.
 2. Set the dataset path, and coefficient configuration.
 3. Put processed bag files in a folder called `inference`. The auto generated `index.txt` should also be present in the folder.
 
+
+## Installation
+
+Running the simulation in gazebo requires pedsim_ros (to simulate the humans).
+To install pedsim_ros and its other dependencies, proceed as follows:
+The default version is ROS Noetic.
+```
+cd ~
+mkdir catkin_ws
+cd catkin_ws
+mkdir src
+cd src
+git clone https://github.com/TempleRAIL/robot_gazebo.git
+git clone https://github.com/Smart-Wheelchair-RRC/pedsim_ros_with_gazebo.git
+wget https://raw.githubusercontent.com/zzuxzt/turtlebot2_noetic_packages/master/turtlebot2_noetic_install.sh 
+sudo sh turtlebot2_noetic_install.sh 
+cd ..
+catkin build
+```
+
 ---
 
 Note: This README is a work in progress, and information about other modes will be added soon.
