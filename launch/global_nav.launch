@@ -1,0 +1,59 @@
+<launch>
+  <arg name="scene_file" default="$(find pedsim_simulator)/scenarios/cumberland.xml"/>
+  <arg name="world_name" default="$(find pedsim_gazebo_plugin)/worlds/cumberland.world"/>
+  <arg name="gui" default="true" doc="Bring up the Gazebo graphical interface"/>
+  <arg name="pose_initial_x" default="4"/>
+  <arg name="pose_initial_y" default="8"/>
+  <arg name="map_file" default="$(find robot_gazebo)/maps/gazebo_cumberland/gazebo_cumberland.yaml"/>
+  <arg name="initial_pose_x" default="4.0"/>
+  <arg name="initial_pose_y" default="8.0"/>
+  <arg name="initial_pose_a" default="0.13"/>
+  <!-- Output -->
+  <arg name="output" default="log"/>
+  <arg name="enable_opencv" default="true"/>
+  <arg name="enable_console_output" default="true"/>
+  <arg name="rviz" default="true"/>
+
+  <!-- Pedsim Gazebo -->
+  <include file="$(find pedsim_simulator)/launch/robot.launch">
+    <arg name="scene_file" value="$(arg scene_file)"/>
+    <arg name="world_name" value="$(arg world_name)"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="pose_initial_x" value="$(arg pose_initial_x)"/>
+    <arg name="pose_initial_y" value="$(arg pose_initial_y)"/>
+  </include>
+
+  <!-- AMCL -->
+  <include file="$(find robot_gazebo)/launch/amcl_demo_drl.launch">
+    <arg name="map_file" value="$(arg map_file)"/>
+    <arg name="initial_pose_x" value="$(arg initial_pose_x)"/>
+    <arg name="initial_pose_y" value="$(arg initial_pose_y)"/>
+    <arg name="initial_pose_a" value="$(arg initial_pose_a)"/>
+  </include>
+
+  <include file="$(find crowdsurfer_ros)/launch/laserscan_to_pcd.launch"/>
+
+  <!-- Subgoal Publisher -->
+  <node name="pure_pursuit" pkg="crowdsurfer_ros" type="pure_pursuit.py" output="screen" required="true">
+    <remap from="path" to="move_base/NavfnROS/plan"/>
+    <param name="rate" type="double" value="20" />
+  </node>
+
+  <!-- Robot Pose Publisher -->
+  <node name="robot_pose_pub" pkg="crowdsurfer_ros" type="robot_pose_pub.py"/>
+
+  <!-- Pedestrian Publisher -->
+  <node name="track_ped_pub" pkg="crowdsurfer_ros" type="track_ped_pub.py" output="screen"/>
+
+  <!-- Goal visualization -->
+  <node name="goal_visualize" pkg="crowdsurfer_ros" type="goal_visualize.py" output="screen" />
+
+  <!-- DRL-VO Control Policy -->
+  <!-- <include file="$(find drl_vo_nav)/launch/drl_vo_inference.launch">
+    <arg name="model_file" value="$(arg model_file)"/>
+  </include> -->
+
+  <!-- Rviz -->
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find crowdsurfer_ros)/rviz/planning_with_global.rviz"/>
+
+</launch>
