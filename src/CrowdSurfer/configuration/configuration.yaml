@@ -14,10 +14,10 @@ vqvae:
     num_embeddings: 64
     embedding_dim: 4
     # hidden_channels: 96
-    checkpoint_path: /home/wheelchair/results/vqvae/64_4_v9_best_priest/best_checkpoint
+    checkpoint_path: /checkpoint_path/vqvae_best_checkpoint.bin
 pixelcnn:
     #   observation_embedding_dim: 32
-    checkpoint_path: /home/wheelchair/results/pixelcnn2/64_4_v9_best_priest_w_vqvae_best_priest_rt_head/best_checkpoint
+    checkpoint_path: /checkpoint_path/vqvae_best_checkpoint.bin
 scoring_network:
     num_samples: 50
 trainer:

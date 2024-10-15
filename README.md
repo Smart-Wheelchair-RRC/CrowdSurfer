@@ -52,11 +52,10 @@ catkin build
 ```
 
 ## Run Demo
-1. Replace the checkpoint path in the [configuration file](./src/CrowdSurfer/configuration/configuration.yaml)
+Download checkpoints from [this link](https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s)
+
+1. Replace the checkpoint paths for VQVAE and Scoring Network in the [configuration file](./src/CrowdSurfer/configuration/configuration.yaml)
 2. From within crowdsurfer_ws/ in tmux, run:
 ```
 bash src/CrowdSurfer/src/CrowdSurfer/run_CrowdSurfer.sh
 ```
----
-
-Note: This README is a work in progress, and information about other modes will be added soon.
