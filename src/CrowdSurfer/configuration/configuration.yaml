@@ -1,0 +1,68 @@
+defaults:
+    - base_configuration
+    - vqvae: base_vqvae
+    - pixelcnn: base_pixelcnn
+    - trainer: base_trainer
+    - dataset: base_dataset
+    - projection: base_projection
+    - live: base_live
+    - _self_
+    - override hydra/hydra_logging: none
+    - override hydra/job_logging: none
+
+vqvae:
+    num_embeddings: 64
+    embedding_dim: 4
+    # hidden_channels: 96
+    checkpoint_path: /checkpoint_path/vqvae_best_checkpoint.bin
+pixelcnn:
+    #   observation_embedding_dim: 32
+    checkpoint_path: /checkpoint_path/vqvae_best_checkpoint.bin
+scoring_network:
+    num_samples: 50
+trainer:
+    results_directory: results
+    batch_size: 4096
+    learning_rate: 3e-4
+    num_epochs: 100
+    # epochs_per_save: 10
+    # use_safetensors_for_saving: false
+    # dataloader_num_workers: 12
+    # dataloader_pin_memory: true
+dataset:
+    directory: data
+    trajectory_length: 50
+    trajectory_time: 5
+    coefficient_configuration:
+        # - BEST_PRIEST
+        # - ELITE_PRIEST
+        - BEST_EXPERT
+        # - ELITE_EXPERT
+    # static_obstacle_type: POINT_CLOUD
+    # num_elite_coefficients: 80
+    # padding: 0
+projection:
+    guidance_type: PRIEST
+    num_priest_iterations: 2
+    use_obstacle_constraints: true
+#   max_dynamic_obstacles: 10
+    max_static_obstacles: 100
+#   padding: 1000
+live:
+    world_frame: map
+    robot_base_frame: base_link
+    odometry_topic: /odom
+    dynamic_obstacle_topic: /track_ped
+    # point_cloud_topic: /pointcloud
+    laser_scan_topic: /scan
+    velocity_command_topic: mobile_base/cmd_vel
+    goal_topic: /final_goal
+    # subgoal_topic: /subgoal
+    # path_topic: /trajectory
+    threshold_distance: 1.0
+    # padding: 1000.0
+    # time_horizon: 3.0
+    # previous_time_steps_for_dynamic: 5
+    dynamic_msg: TRACKED_PERSONS
+
+mode: LIVE
