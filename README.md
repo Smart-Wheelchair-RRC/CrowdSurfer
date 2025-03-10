@@ -89,3 +89,19 @@ From within crowdsurfer_ws/ in tmux, run:
 ```bash
 bash src/CrowdSurfer/src/CrowdSurfer/run_CrowdSurfer.sh
 ```
+
+
+
+## If you liked our work, please consider citing us -
+**Bibtex** -
+```
+@misc{kumar2025crowdsurfersamplingoptimizationaugmented,
+      title={CrowdSurfer: Sampling Optimization Augmented with Vector-Quantized Variational AutoEncoder for Dense Crowd Navigation}, 
+      author={Naman Kumar and Antareep Singha and Laksh Nanwani and Dhruv Potdar and Tarun R and Fatemeh Rastgar and Simon Idoko and Arun Kumar Singh and K. Madhava Krishna},
+      year={2025},
+      eprint={2409.16011},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2409.16011}, 
+}
+```
