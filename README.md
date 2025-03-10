@@ -6,7 +6,7 @@
 
 \* denotes equal contribution
 
-Accepted at IEEE International Conference on Robotics and Automation (ICRA) 2025
+Accepted at **IEEE International Conference on Robotics and Automation (ICRA) 2025**
 
 [Paper](https://arxiv.org/abs/2409.16011) | [Video](https://youtu.be/BMDCYdxfaXM) | [Website](https://smart-wheelchair-rrc.github.io/CrowdSurfer-webpage/)
 
@@ -21,41 +21,70 @@ Navigation amongst densely packed crowds remains a challenge for mobile robots. 
 This repository contains the code for the paper "CrowdSurfer: Sampling Optimization Augmented with Vector-Quantized Variational AutoEncoder for Dense Crowd Navigation".
 
 All configuration is done via [this configuration file](./src/CrowdSurfer/configuration/configuration.yaml).
-To run once setup, use this [script](./src/CrowdSurfer/run_CrowdSurfer.sh) to run the code in a tmux session.
 
-## Installation
+## Installation (Prerequisites - ROS1 Noetic, Miniconda, Cuda 11.8)
 
-Setup your conda environment called "crowdsurfer" with the following packages:
+```
+conda create -n crowdsurfer python=3.8 -y
+conda activate crowdsurfer
+```
 
--   CUDA 12.1
--   PyTorch
--   JAX
--   Hydra
--   HuggingFace Accelerate
--   Open3D
--   Scikit Learn
+### Install the repo dependencies (tested with Cuda 11.8)
+```
+pip install open3d
+pip install jax==0.2.20 jaxlib==0.3.2+cuda11.cudnn82 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+pip install networkx==3.1
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install hydra-core
+pip install accelerate
+```
 
-Running the simulation in gazebo requires pedsim_ros (to simulate the humans).
-To install pedsim_ros and its other dependencies, proceed as follows:
+### Setting up the repository and simulation (ROS1 Noetic)
+
+Running the simulation in Gazebo requires pedsim_ros (to simulate the humans).
+To install pedsim_ros and other dependencies, proceed as follows:
 The default version is ROS Noetic.
 
-```bash
+**Simulation Dependencies**
+```
 mkdir -p crowdsurfer_ws/src && cd crowdsurfer_ws/src
 git clone https://github.com/TempleRAIL/robot_gazebo.git
 git clone https://github.com/Smart-Wheelchair-RRC/pedsim_ros_with_gazebo.git
 wget https://raw.githubusercontent.com/zzuxzt/turtlebot2_noetic_packages/master/turtlebot2_noetic_install.sh
 sudo sh turtlebot2_noetic_install.sh
-git clone https://github.com/Smart-Wheelchair-RRC/CrowdSurfer.git
-cd ..
-catkin build
 ```
 
-## Run Demo
+**Clone our repo**
+```
+git clone https://github.com/Smart-Wheelchair-RRC/CrowdSurfer.git
+```
 
-Download checkpoints from [this link](https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s)
+**Building the workspace**
+```
+cd ..
+rosdep install --from-paths src --ignore-src -r -y
+catkin_make
+source devel/setup.bash
+```
 
-1. Replace the checkpoint paths for VQVAE and Scoring Network in the [configuration file](./src/CrowdSurfer/configuration/configuration.yaml)
-2. From within crowdsurfer_ws/ in tmux, run:
+### Downloading the checkpoints
+**To the Default Path** -
+```
+cd src/CrowdSurfer/src/CrowdSurfer && mkdir checkpoints
+pip install gdown
+gdown https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s -O checkpoints --folder
+cd ../../..
+```
+
+**To a Custom Path** -
+
+Download checkpoints from [the drive link](https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s)
+
+Replace the checkpoint paths for VQVAE and PixelCNN in the [configuration file](./src/CrowdSurfer/configuration/configuration.yaml)
+
+## Running the Demo
+
+From within crowdsurfer_ws/ in tmux, run:
 
 ```bash
 bash src/CrowdSurfer/src/CrowdSurfer/run_CrowdSurfer.sh
