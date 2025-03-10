@@ -73,7 +73,7 @@ source devel/setup.bash
 cd src/CrowdSurfer/src/CrowdSurfer && mkdir checkpoints
 pip install gdown
 gdown https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s -O checkpoints --folder
-cd ../../..
+cd ../../../..
 ```
 
 **To a Custom Path** -
