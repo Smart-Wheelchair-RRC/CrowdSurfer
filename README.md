@@ -63,7 +63,7 @@ git clone https://github.com/Smart-Wheelchair-RRC/CrowdSurfer.git
 ```
 cd ..
 rosdep install --from-paths src --ignore-src -r -y
-catkin_make
+catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 ```
 
