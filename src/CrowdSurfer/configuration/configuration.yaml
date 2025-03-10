@@ -14,10 +14,10 @@ vqvae:
     num_embeddings: 64
     embedding_dim: 4
     # hidden_channels: 96
-    checkpoint_path: /checkpoint_path/vqvae_best_checkpoint.bin
+    checkpoint_path: "../../../src/CrowdSurfer/src/CrowdSurfer/checkpoints/vqvae_best_64_4.bin"
 pixelcnn:
     #   observation_embedding_dim: 32
-    checkpoint_path: /checkpoint_path/vqvae_best_checkpoint.bin
+    checkpoint_path: "../../../src/CrowdSurfer/src/CrowdSurfer/checkpoints/pixelcnn_best_64_4.bin"
 scoring_network:
     num_samples: 50
 trainer:
