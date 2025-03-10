@@ -63,7 +63,7 @@ git clone https://github.com/Smart-Wheelchair-RRC/CrowdSurfer.git
 ```
 cd ..
 rosdep install --from-paths src --ignore-src -r -y
-catkin_make
+catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 ```
 
@@ -73,7 +73,7 @@ source devel/setup.bash
 cd src/CrowdSurfer/src/CrowdSurfer && mkdir checkpoints
 pip install gdown
 gdown https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s -O checkpoints --folder
-cd ../../..
+cd ../../../..
 ```
 
 **To a Custom Path** -
