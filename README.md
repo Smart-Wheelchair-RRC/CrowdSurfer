@@ -33,6 +33,9 @@ conda activate crowdsurfer
 ```
 pip install open3d
 pip install jax==0.2.20 jaxlib==0.3.2+cuda11.cudnn82 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+pip install pycryptodomex
+pip install gnupg
+pip install rospkg
 pip install networkx==3.1
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 pip install hydra-core
