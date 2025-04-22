@@ -5,6 +5,7 @@ import torch
 from configuration import Configuration, Mode
 
 from .pipeline import InferenceData, Pipeline
+import matplotlib.pyplot as plt
 
 
 class LivePipeline(Pipeline):
@@ -15,36 +16,31 @@ class LivePipeline(Pipeline):
         self.threshold_distance = configuration.live.threshold_distance
         self.padding_obstacle = configuration.live.padding
 
-    def _generate_occupancy_map(self, laser_scan: np.ndarray, map_height=60, map_width=60, resolution=0.1):
+    def _generate_occupancy_map(self, pcd: np.ndarray, map_height=60, map_width=60, resolution=0.1):
         occupancy_map = np.zeros((map_height, map_width), dtype=np.int8)
         origin = (map_width * resolution / 2, map_height * resolution / 2)
-        ranges, angles = laser_scan[:, 0], laser_scan[:, 1]
+        print(pcd.shape)
+        x = pcd[:, 0]
+        y = pcd[:, 1]
 
-        valid_indices = ~np.isnan(ranges) & ~np.isnan(angles)
-        valid_ranges = ranges[valid_indices]
-        valid_angles = angles[valid_indices]
+        # Transformation to map frame
+        map_x = np.round((x + origin[0]) / resolution).astype(int)
+        map_y = np.round((y + origin[1]) / resolution).astype(int)
 
-        # Checking for valid ranges, if not found, skip timestep.
-        if len(valid_ranges) != 0:
-            # Polar to Cartesian coordinates transformation
-            x = valid_ranges * np.cos(valid_angles)
-            y = valid_ranges * np.sin(valid_angles)
+        valid_points = (map_x >= 0) & (map_x < map_width) & (map_y >= 0) & (map_y < map_height)
+        map_x = map_x[valid_points]
+        map_y = map_y[valid_points]
 
-            # Transformation to map frame
-            map_x = np.round((x + origin[0]) / resolution).astype(int)
-            map_y = np.round((y + origin[1]) / resolution).astype(int)
+        print(x, y)
+        if len(map_x) > 0:
+            occupancy_map[map_y, map_x] = 100  # Occupied
 
-            valid_points = (map_x >= 0) & (map_x < map_width) & (map_y >= 0) & (map_y < map_height)
-            map_x = map_x[valid_points]
-            map_y = map_y[valid_points]
+        # PLACEHOLDER ego-agent position on map
+        ego_x = int(map_width / 2)
+        ego_y = int(map_height / 2)
+        occupancy_map[ego_y, ego_x] = 50  # Ego-agent
 
-            if len(map_x) > 0:
-                occupancy_map[map_y, map_x] = 100  # Occupied
-
-            # PLACEHOLDER ego-agent position on map
-            ego_x = int(map_width / 2)
-            ego_y = int(map_height / 2)
-            occupancy_map[ego_y, ego_x] = 50  # Ego-agent
+        plt.imsave("/home/laksh/crowdsurfer_ws/outputs/test/occu.png", occupancy_map, cmap="gray")
 
         return occupancy_map
 
@@ -77,11 +73,10 @@ class LivePipeline(Pipeline):
         goal: np.ndarray,
         ego_velocity: np.ndarray,
         ego_acceleration: np.ndarray,
-        laser_scan: np.ndarray,
         point_cloud: np.ndarray,
         dynamic_obstacles_n_steps: np.ndarray,
     ):
-        occupancy_map = self._generate_occupancy_map(laser_scan)
+        occupancy_map = self._generate_occupancy_map(point_cloud)
 
         point_cloud = self._process_point_cloud(point_cloud)
 
