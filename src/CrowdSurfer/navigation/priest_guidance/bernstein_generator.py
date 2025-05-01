@@ -2,7 +2,7 @@ import numpy as np
 import scipy.special
 
 
-def bernstein_coeff_order10_new(n, tmin, tmax, t_actual):
+def generate_order_10_bernstein_coefficients(n, tmin, tmax, t_actual):
     time_diff = tmax - tmin
 
     t = (t_actual - tmin) / time_diff

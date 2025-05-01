@@ -2,6 +2,7 @@ from .configuration import (
     CoefficientConfiguration,
     Configuration,
     DatasetConfiguration,
+    DynamicObstaclesMessageType,
     GuidanceType,
     Mode,
     PixelCNNConfiguration,
@@ -10,7 +11,6 @@ from .configuration import (
     StaticObstacleType,
     TrainerConfiguration,
     VQVAEConfiguration,
-    Dynamic_Obstacles_Msg_Type,
 )
 from .initialize import check_configuration, initialize_configuration
 
@@ -28,5 +28,5 @@ __all__ = [
     "CoefficientConfiguration",
     "initialize_configuration",
     "check_configuration",
-    "Dynamic_Obstacles_Msg_Type",
+    "DynamicObstaclesMessageType",
 ]

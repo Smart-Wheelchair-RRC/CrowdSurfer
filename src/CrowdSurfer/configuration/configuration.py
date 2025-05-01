@@ -31,10 +31,10 @@ class Mode(Enum):
     LIVE = auto()
 
 
-class Dynamic_Obstacles_Msg_Type(Enum):
-    MARKER_ARRY = auto()
+class DynamicObstaclesMessageType(Enum):
+    MARKER_ARRAY = auto()
     AGENT_STATES = auto()
-    ODOM_ARRAY = auto()
+    ODOMETRY_ARRAY = auto()
     TRACKED_PERSONS = auto()
 
 
@@ -101,13 +101,16 @@ class LiveConfiguration:
     laser_scan_topic: str = "/laserscan"
     velocity_command_topic: str = "/cmd_vel"
     goal_topic: str = "move_base_simple/goal"
-    subgoal_topic: str = "/subgoal"
+    sub_goal_topic: str = "/subgoal"
     path_topic: str = "/trajectory"
     threshold_distance: float = 1.0
     padding: float = 1000
     time_horizon: float = 3
     previous_time_steps_for_dynamic: int = 5
-    dynamic_msg: Dynamic_Obstacles_Msg_Type = Dynamic_Obstacles_Msg_Type.MARKER_ARRY
+    dynamic_obstacle_message_type: DynamicObstaclesMessageType = (
+        DynamicObstaclesMessageType.MARKER_ARRAY
+    )
+    use_global_path: bool = True
 
 
 @dataclass

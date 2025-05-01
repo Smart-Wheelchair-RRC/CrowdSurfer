@@ -268,14 +268,14 @@ def create_priest_trajectories_from_observations(
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
     point_cloud = data.get(DataKeys.POINT_CLOUD)
-    assert (
-        point_cloud is not None or planner.num_obstacles == 0
-    ), "Input dictionary must contain 'point_cloud' key or max_static_obstacles must be 0"
+    assert point_cloud is not None or planner.num_static_obstacles == 0, (
+        "Input dictionary must contain 'point_cloud' key or max_static_obstacles must be 0"
+    )
 
     dynamic_obstacle_metadata = data.get(DataKeys.DYNAMIC_OBSTACLES)
-    assert (
-        dynamic_obstacle_metadata is not None or planner.num_dynamic_obstacles == 0
-    ), "Input dictionary must contain 'dynamic_obstacle_metadata' key or max_dynamic_obstacles must be 0"
+    assert dynamic_obstacle_metadata is not None or planner.num_dynamic_obstacles == 0, (
+        "Input dictionary must contain 'dynamic_obstacle_metadata' key or max_dynamic_obstacles must be 0"
+    )
 
     ego_velocity = get_or_assert(data, DataKeys.EGO_VELOCITY)
 
@@ -293,7 +293,7 @@ def create_priest_trajectories_from_observations(
         current_goal_position: np.ndarray = goal_position[timestep]  # shape: (2,)
         current_point_cloud: np.ndarray = (
             point_cloud[timestep]  # shape: (max_downsampled_points, 2)
-            if planner.num_obstacles != 0
+            if planner.num_static_obstacles != 0
             else np.zeros((0, 2))
         )
         current_dynamic_obstacle_metadata: np.ndarray = (
@@ -301,17 +301,6 @@ def create_priest_trajectories_from_observations(
             if planner.num_dynamic_obstacles != 0
             else np.zeros((0, 5))
         )
-
-        planner.x_init = 0
-        planner.y_init = 0
-        planner.theta_init = 0
-
-        planner.vx_init = current_velocity[0]
-        planner.vy_init = current_velocity[1]
-
-        # Setting PRIEST goal as the final odometry positions of the current rosbag
-        planner.x_fin = current_goal_position[0]
-        planner.y_fin = current_goal_position[1]
 
         # PointCloud Data Processing
         x_obs_init_1: np.ndarray = current_point_cloud[:, 0]
@@ -325,16 +314,14 @@ def create_priest_trajectories_from_observations(
         x_obs_init_1 = x_obs_init_1[mask]
         y_obs_init_1 = y_obs_init_1[mask]
 
-        planner.update_obstacle_pointcloud(np.column_stack((x_obs_init_1, y_obs_init_1, np.zeros_like(x_obs_init_1))))
-
         # Dynamic Obstacle Data Processing
         num_obstacles = np.sum(~np.isnan(current_dynamic_obstacle_metadata[:, 0]))
 
         # Padding for redundant obstacles
-        planner.x_obs_init_dy.fill(1000.0)
-        planner.y_obs_init_dy.fill(1000.0)
-        planner.vx_obs_dy.fill(0.0)
-        planner.vy_obs_dy.fill(0.0)
+        current_dynamic_obstacle_x_positions = np.ones(planner.num_dynamic_obstacles) * 1000
+        current_dynamic_obstacle_y_positions = np.ones(planner.num_dynamic_obstacles) * 1000
+        current_dynamic_obstacle_x_velocities = np.zeros(planner.num_dynamic_obstacles)
+        current_dynamic_obstacle_y_velocities = np.zeros(planner.num_dynamic_obstacles)
 
         id_to_index = {}
         current_index = 0
@@ -350,12 +337,26 @@ def create_priest_trajectories_from_observations(
                     raise ValueError("Warning: More obstacles detected than can be handled.")
 
             array_idx = id_to_index[obstacle_id]
-            planner.x_obs_init_dy[array_idx] = current_dynamic_obstacle_metadata[obstacle_index, 1]
-            planner.y_obs_init_dy[array_idx] = current_dynamic_obstacle_metadata[obstacle_index, 2]
-            planner.vx_obs_dy[array_idx] = current_dynamic_obstacle_metadata[obstacle_index, 3]
-            planner.vy_obs_dy[array_idx] = current_dynamic_obstacle_metadata[obstacle_index, 4]
+            current_dynamic_obstacle_x_positions[array_idx] = current_dynamic_obstacle_metadata[obstacle_index, 1]
+            current_dynamic_obstacle_y_positions[array_idx] = current_dynamic_obstacle_metadata[obstacle_index, 2]
+            current_dynamic_obstacle_x_velocities[array_idx] = current_dynamic_obstacle_metadata[obstacle_index, 3]
+            current_dynamic_obstacle_y_velocities[array_idx] = current_dynamic_obstacle_metadata[obstacle_index, 4]
 
         c_x_best, c_y_best, x_best, y_best, c_x_elite, c_y_elite, x_elite, y_elite, _ = planner.run_optimization(
+            initial_x_position=0,
+            initial_y_position=0,
+            initial_x_velocity=current_velocity[0],
+            initial_y_velocity=current_velocity[1],
+            initial_x_acceleration=0,
+            initial_y_acceleration=0,
+            goal_x_position=current_goal_position[0],
+            goal_y_position=current_goal_position[1],
+            dynamic_obstacle_x_positions=current_dynamic_obstacle_x_positions,
+            dynamic_obstacle_y_positions=current_dynamic_obstacle_y_positions,
+            dynamic_obstacle_x_velocities=current_dynamic_obstacle_x_velocities,
+            dynamic_obstacle_y_velocities=current_dynamic_obstacle_y_velocities,
+            static_obstacle_x_positions=x_obs_init_1,
+            static_obstacle_y_positions=y_obs_init_1,
             custom_x_waypoint=expert_trajectory[timestep, :, 0],
             custom_y_waypoint=expert_trajectory[timestep, :, 1],
         )
@@ -463,9 +464,9 @@ def expert_trajectory_to_bernstein_priest(data: Dict[str, np.ndarray], planner: 
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
     point_cloud = data.get(DataKeys.POINT_CLOUD)
-    assert (
-        point_cloud is not None or planner.num_obstacles == 0
-    ), "Input dictionary must contain 'point_cloud' key or max_static_obstacles must be 0"
+    assert point_cloud is not None or planner.num_obstacles == 0, (
+        "Input dictionary must contain 'point_cloud' key or max_static_obstacles must be 0"
+    )
 
     ego_velocity = get_or_assert(data, DataKeys.EGO_VELOCITY)
     goal_position = get_or_assert(data, DataKeys.GOAL_POSITION)

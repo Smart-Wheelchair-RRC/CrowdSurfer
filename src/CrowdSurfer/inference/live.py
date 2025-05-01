@@ -1,6 +1,7 @@
 import numpy as np
 import open3d as o3d
 import torch
+
 from configuration import Configuration, Mode
 
 from .pipeline import InferenceData, Pipeline

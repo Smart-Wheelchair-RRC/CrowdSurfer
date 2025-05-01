@@ -7,7 +7,7 @@ from torch import Tensor
 
 from configuration import StaticObstacleType
 
-from .pixelcnn import ObservationEmbedding
+from .observation_embedding import ObservationEmbedding
 
 
 class ScoringNetwork(nn.Module):

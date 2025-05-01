@@ -6,61 +6,61 @@ import jax.numpy as jnp
 import numpy as np
 from jax import jit, random
 
-from .bernstein_coeff_order10_arbitinterval import bernstein_coeff_order10_new
+from .bernstein_generator import generate_order_10_bernstein_coefficients
 
 
-class batch_crowd_nav:
+class PriestPlannerCore:
     def __init__(
         self,
-        a_obs_1,
-        b_obs_1,
-        a_obs_2,
-        b_obs_2,
-        v_max,
-        v_min,
-        a_max,
-        num_obs_1,
-        num_obs_2,
-        t_fin,
-        num,
-        num_batch,
-        maxiter,
-        maxiter_cem,
-        weight_smoothness,
-        weight_track,
-        way_point_shape,
-        v_des,
+        static_obstacle_semi_minor_axis,
+        static_obstacle_semi_major_axis,
+        dynamic_obstacle_semi_minor_axis,
+        dynamic_obstacle_semi_major_axis,
+        max_velocity,
+        min_velocity,
+        max_acceleration,
+        num_static_obstacles,
+        num_dynamic_obstacles,
+        time_horizon,
+        trajectory_length,
+        trajectory_batch_size,
+        max_inner_iterations,
+        max_outer_iterations,
+        smoothness_weight,
+        tracking_weight,
+        num_waypoints,
+        desired_velocity,
     ):
-        self.maxiter = maxiter
-        self.maxiter_cem = maxiter_cem
-        self.weight_smoothness = weight_smoothness
-        self.weight_track = weight_track
-        self.v_des = v_des
+        self.maxiter = max_inner_iterations
+        self.maxiter_cem = max_outer_iterations
+        self.weight_smoothness = smoothness_weight
+        self.weight_track = tracking_weight
+        self.v_des = desired_velocity
 
-        self.v_max = v_max
-        self.v_min = v_min
-        self.a_max = a_max
+        self.v_max = max_velocity
+        self.v_min = min_velocity
+        self.a_max = max_acceleration
 
-        self.a_obs_1 = a_obs_1
-        self.b_obs_1 = b_obs_1
-        self.a_obs_2 = a_obs_2
-        self.b_obs_2 = b_obs_2
+        self.a_obs_1 = static_obstacle_semi_minor_axis
+        self.b_obs_1 = static_obstacle_semi_major_axis
+        self.a_obs_2 = dynamic_obstacle_semi_minor_axis
+        self.b_obs_2 = dynamic_obstacle_semi_major_axis
 
-        self.t_fin = t_fin
-        self.num = num
+        self.t_fin = time_horizon
+        self.num = trajectory_length
         self.t = self.t_fin / self.num
-        self.num_batch = num_batch
+        self.num_batch = trajectory_batch_size
         self.ellite_num_const = 80
         self.ellite_num = 20
 
-        self.num_obs_1 = num_obs_1
-        self.num_obs_2 = num_obs_2
+        self.num_obs_1 = num_static_obstacles
+        self.num_obs_2 = num_dynamic_obstacles
         self.num_obs_proj = 20
 
-        tot_time = np.linspace(0, t_fin, num)
-        tot_time_copy = tot_time.reshape(num, 1)
+        tot_time = np.linspace(0, time_horizon, trajectory_length)
+        tot_time_copy = tot_time.reshape(trajectory_length, 1)
 
-        self.P, self.Pdot, self.Pddot = bernstein_coeff_order10_new(
+        self.P, self.Pdot, self.Pddot = generate_order_10_bernstein_coefficients(
             10, tot_time_copy[0], tot_time_copy[-1], tot_time_copy
         )
 
@@ -74,9 +74,13 @@ class batch_crowd_nav:
 
         self.nvar = jnp.shape(self.P_jax)[1]
 
-        self.cost_smoothness = self.weight_smoothness * jnp.dot(self.Pddot_jax.T, self.Pddot_jax)
+        self.cost_smoothness = self.weight_smoothness * jnp.dot(
+            self.Pddot_jax.T, self.Pddot_jax
+        )
         self.A_projection = jnp.identity(self.nvar)
-        self.A_eq = jnp.vstack((self.P_jax[0], self.Pdot_jax[0], self.Pddot_jax[0], self.P_jax[-1]))
+        self.A_eq = jnp.vstack(
+            (self.P_jax[0], self.Pdot_jax[0], self.Pddot_jax[0], self.P_jax[-1])
+        )
 
         self.A_vel = self.Pdot_jax
         self.A_acc = self.Pddot_jax
@@ -84,13 +88,13 @@ class batch_crowd_nav:
 
         ########## for up sampling
 
-        num_up = num
+        num_up = trajectory_length
         # dt_up = t_fin / num_up
-        tot_time_up = np.linspace(0, t_fin, num_up)
+        tot_time_up = np.linspace(0, time_horizon, num_up)
         self.tot_time_up = tot_time_up
         tot_time_copy_up = tot_time_up.reshape(num_up, 1)
 
-        P_up, Pdot_up, Pddot_up = bernstein_coeff_order10_new(
+        P_up, Pdot_up, Pddot_up = generate_order_10_bernstein_coefficients(
             10, tot_time_copy_up[0], tot_time_copy_up[-1], tot_time_copy_up
         )
 
@@ -98,7 +102,7 @@ class batch_crowd_nav:
         self.Pdot_up_jax = jnp.asarray(Pdot_up)
         self.Pddot_up_jax = jnp.asarray(Pddot_up)
 
-        self.maxitet_proj = 13
+        self.maxitet_proj = self.maxiter
 
         ##########################3 computing initial covariance for trajectories
 
@@ -149,7 +153,7 @@ class batch_crowd_nav:
                 ),
             )
         )
-        self.way_point_shape = way_point_shape
+        self.way_point_shape = num_waypoints
         ###############
 
         self.cost_x = (
@@ -193,10 +197,18 @@ class batch_crowd_nav:
             0, 0.8, size=self.num_batch * self.initial_up_sampling
         )  # np.random.uniform(low=-2, high=2.0, size=self.num_batch * self.initial_up_sampling)# np.random.normal(size=self.num_batch * self.initial_up_sampling)
         self.scale_factor_warm = np.random.normal(0, 0.8, size=self.num_sample_warm)
-        self.scale_factor_1 = np.random.normal(0, 0.8, size=self.num_batch * self.initial_up_sampling)
-        self.scale_factor_2 = np.random.normal(0, 0.8, size=self.num_batch * self.initial_up_sampling)
-        self.scale_factor_3 = np.random.normal(0, 0.8, size=self.num_batch * self.initial_up_sampling)
-        self.scale_factor_4 = np.random.normal(0, 0.8, size=self.num_batch * self.initial_up_sampling)
+        self.scale_factor_1 = np.random.normal(
+            0, 0.8, size=self.num_batch * self.initial_up_sampling
+        )
+        self.scale_factor_2 = np.random.normal(
+            0, 0.8, size=self.num_batch * self.initial_up_sampling
+        )
+        self.scale_factor_3 = np.random.normal(
+            0, 0.8, size=self.num_batch * self.initial_up_sampling
+        )
+        self.scale_factor_4 = np.random.normal(
+            0, 0.8, size=self.num_batch * self.initial_up_sampling
+        )
         self.k_max = 2
 
     @partial(jit, static_argnums=(0,), backend="gpu")
@@ -216,8 +228,12 @@ class batch_crowd_nav:
         return arc_length, arc_vec, x_diff, y_diff
 
     @partial(jit, static_argnums=(0,), backend="gpu")
-    def compute_contouring_error(self, x_waypoint, y_waypoint, x_target_point, y_target_point, arc_vec):
-        dist = jnp.sqrt((x_waypoint - x_target_point) ** 2 + (y_waypoint - y_target_point) ** 2)
+    def compute_contouring_error(
+        self, x_waypoint, y_waypoint, x_target_point, y_target_point, arc_vec
+    ):
+        dist = jnp.sqrt(
+            (x_waypoint - x_target_point) ** 2 + (y_waypoint - y_target_point) ** 2
+        )
         index = jnp.argmin(dist)
 
         arc_point = arc_vec[index]
@@ -254,7 +270,10 @@ class batch_crowd_nav:
         y_temp_dy = y_obs_init_dy + vy_obs_dy * self.tot_time[:, jnp.newaxis]
         y_obs_trajectory_dy = y_temp_dy.T
 
-        Dist = jnp.sqrt((x_init - x_obs_trajectory[:, 0]) ** 2 + (y_init - y_obs_trajectory[:, 0]) ** 2)
+        Dist = jnp.sqrt(
+            (x_init - x_obs_trajectory[:, 0]) ** 2
+            + (y_init - y_obs_trajectory[:, 0]) ** 2
+        )
         idx_dis = jnp.argsort(Dist)
 
         x_obs_trajectory = x_obs_trajectory[idx_dis[0 : (self.num_obs_1)], :]
@@ -298,7 +317,9 @@ class batch_crowd_nav:
     ###########################################################
 
     @partial(jit, static_argnums=(0,), backend="gpu")
-    def compute_warm_traj(self, initial_state, v_des, x_waypoint, y_waypoint, arc_vec, x_diff, y_diff):
+    def compute_warm_traj(
+        self, initial_state, v_des, x_waypoint, y_waypoint, arc_vec, x_diff, y_diff
+    ):
         x_init, y_init, vx_init, vy_init, ax_init, ay_init = initial_state
 
         dist = jnp.sqrt((x_waypoint - x_init) ** 2 + (y_waypoint - y_init) ** 2)
@@ -347,8 +368,12 @@ class batch_crowd_nav:
         x_fin_vec = x_fin_path * jnp.ones((self.num_sample_warm, 1))
         y_fin_vec = y_fin_path * jnp.ones((self.num_sample_warm, 1))
 
-        b_eq_x = jnp.hstack((x_init_vec, vx_init_vec, ax_init_vec, x_mid_vec, x_fin_vec))
-        b_eq_y = jnp.hstack((y_init_vec, vy_init_vec, ay_init_vec, y_mid_vec, y_fin_vec))
+        b_eq_x = jnp.hstack(
+            (x_init_vec, vx_init_vec, ax_init_vec, x_mid_vec, x_fin_vec)
+        )
+        b_eq_y = jnp.hstack(
+            (y_init_vec, vy_init_vec, ay_init_vec, y_mid_vec, y_fin_vec)
+        )
 
         A_eq = jnp.vstack(
             (
@@ -492,8 +517,12 @@ class batch_crowd_nav:
         x_25_vec = x_guess_mid2.reshape(self.num_batch * self.initial_up_sampling, 1)
         y_25_vec = y_guess_mid2.reshape(self.num_batch * self.initial_up_sampling, 1)
 
-        x_fin_vec = x_fin_path * jnp.ones((self.num_batch * self.initial_up_sampling, 1))
-        y_fin_vec = y_fin_path * jnp.ones((self.num_batch * self.initial_up_sampling, 1))
+        x_fin_vec = x_fin_path * jnp.ones(
+            (self.num_batch * self.initial_up_sampling, 1)
+        )
+        y_fin_vec = y_fin_path * jnp.ones(
+            (self.num_batch * self.initial_up_sampling, 1)
+        )
 
         b_eq_x = jnp.hstack(
             (
@@ -559,12 +588,8 @@ class batch_crowd_nav:
         x_guess_temp = jnp.dot(self.P_jax, sol_x[:, 0 : self.nvar].T).T
         y_guess_temp = jnp.dot(self.P_jax, sol_y[:, 0 : self.nvar].T).T
 
-        x_guess_sampling = (
-            x_guess_temp  # x_guess_temp#x_guess_temp * jnp.cos(goal_rot) + y_guess_temp * jnp.sin(goal_rot)
-        )
-        y_guess_sampling = (
-            y_guess_temp  # y_guess_temp#- x_guess_temp * jnp.sin(goal_rot) + y_guess_temp * jnp.cos(goal_rot)
-        )
+        x_guess_sampling = x_guess_temp  # x_guess_temp#x_guess_temp * jnp.cos(goal_rot) + y_guess_temp * jnp.sin(goal_rot)
+        y_guess_sampling = y_guess_temp  # y_guess_temp#- x_guess_temp * jnp.sin(goal_rot) + y_guess_temp * jnp.cos(goal_rot)
 
         wc_alpha_temp = x_guess_sampling - x_obs_trajectory[:, jnp.newaxis]
         ws_alpha_temp = y_guess_sampling - y_obs_trajectory[:, jnp.newaxis]
@@ -578,14 +603,28 @@ class batch_crowd_nav:
         wc_alpha_dy = wc_alpha_temp_dy.transpose(1, 0, 2)
         ws_alpha_dy = ws_alpha_temp_dy.transpose(1, 0, 2)
 
-        wc_alpha = wc_alpha.reshape(self.num_batch * self.initial_up_sampling, self.num * self.num_obs_1)
-        ws_alpha = ws_alpha.reshape(self.num_batch * self.initial_up_sampling, self.num * self.num_obs_1)
+        wc_alpha = wc_alpha.reshape(
+            self.num_batch * self.initial_up_sampling, self.num * self.num_obs_1
+        )
+        ws_alpha = ws_alpha.reshape(
+            self.num_batch * self.initial_up_sampling, self.num * self.num_obs_1
+        )
 
-        wc_alpha_dy = wc_alpha_dy.reshape(self.num_batch * self.initial_up_sampling, self.num * self.num_obs_2)
-        ws_alpha_dy = ws_alpha_dy.reshape(self.num_batch * self.initial_up_sampling, self.num * self.num_obs_2)
+        wc_alpha_dy = wc_alpha_dy.reshape(
+            self.num_batch * self.initial_up_sampling, self.num * self.num_obs_2
+        )
+        ws_alpha_dy = ws_alpha_dy.reshape(
+            self.num_batch * self.initial_up_sampling, self.num * self.num_obs_2
+        )
 
-        dist_obs_st = -(wc_alpha**2) / (self.a_obs_1**2) - ws_alpha**2 / (self.b_obs_1**2) + 1
-        dist_obs_dy = -(wc_alpha_dy**2) / (self.a_obs_2**2) - ws_alpha_dy**2 / (self.b_obs_2**2) + 1
+        dist_obs_st = (
+            -(wc_alpha**2) / (self.a_obs_1**2) - ws_alpha**2 / (self.b_obs_1**2) + 1
+        )
+        dist_obs_dy = (
+            -(wc_alpha_dy**2) / (self.a_obs_2**2)
+            - ws_alpha_dy**2 / (self.b_obs_2**2)
+            + 1
+        )
 
         dist_obs = jnp.hstack((dist_obs_st, dist_obs_dy))
 
@@ -604,8 +643,12 @@ class batch_crowd_nav:
 
         idx_ellite = jnp.argsort(cost_obs_penalty)
 
-        x_guess_sample = x_guess_sampling[idx_ellite[0 : self.num_batch - self.num_sample_warm]]
-        y_guess_sample = y_guess_sampling[idx_ellite[0 : self.num_batch - self.num_sample_warm]]
+        x_guess_sample = x_guess_sampling[
+            idx_ellite[0 : self.num_batch - self.num_sample_warm]
+        ]
+        y_guess_sample = y_guess_sampling[
+            idx_ellite[0 : self.num_batch - self.num_sample_warm]
+        ]
 
         x_guess = jnp.vstack((x_guess_sample, x_guess_per))
         y_guess = jnp.vstack((y_guess_sample, y_guess_per))
@@ -646,13 +689,29 @@ class batch_crowd_nav:
         )
 
     @partial(jit, static_argnums=(0,), backend="gpu")
-    def compute_traj_guess_from_waypoints(
+    def compute_traj_guess_from_coefficients(
         self,
-        x_coefficients,
-        y_coefficients,
+        # initial_state,
+        # v_des,
         x_waypoint,
         y_waypoint,
+        # arc_vec,
+        x_coefficients,
+        y_coefficients,
     ):
+        # x_init, y_init, _, _, _, _ = initial_state
+
+        # dist = jnp.sqrt((x_waypoint - x_init) ** 2 + (y_waypoint - y_init) ** 2)
+        # index = jnp.argmin(dist)
+        # arc_point = arc_vec[index]
+
+        # look_ahead_point_path = arc_point + v_des * self.t_fin
+        # look_ahead_point_path = jnp.clip(look_ahead_point_path, arc_vec[0], arc_vec[-1])
+        # index_final_path = jnp.argmin(jnp.abs(look_ahead_point_path - arc_vec))
+
+        # x_fin_path = x_waypoint[index_final_path]
+        # y_fin_path = y_waypoint[index_final_path]
+
         x_fin_path = x_waypoint[-1]
         y_fin_path = y_waypoint[-1]
 
@@ -711,13 +770,15 @@ class batch_crowd_nav:
 
         rad_a = jnp.hstack(
             (
-                self.a_obs_1 * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
+                self.a_obs_1
+                * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
                 self.a_obs_2 * jnp.ones((self.num_batch, self.num * (self.num_obs_2))),
             )
         )
         rad_b = jnp.hstack(
             (
-                self.b_obs_1 * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
+                self.b_obs_1
+                * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
                 self.b_obs_2 * jnp.ones((self.num_batch, self.num * (self.num_obs_2))),
             )
         )
@@ -765,8 +826,12 @@ class batch_crowd_nav:
             - self.rho_ineq * jnp.dot(self.A_vel.T, b_vy_ineq.T).T
         )
 
-        sol_x = jnp.dot(self.cost_mat_inv_x_projection, jnp.hstack((-lincost_x, b_eq_x)).T).T
-        sol_y = jnp.dot(self.cost_mat_inv_y_projection, jnp.hstack((-lincost_y, b_eq_y)).T).T
+        sol_x = jnp.dot(
+            self.cost_mat_inv_x_projection, jnp.hstack((-lincost_x, b_eq_x)).T
+        ).T
+        sol_y = jnp.dot(
+            self.cost_mat_inv_y_projection, jnp.hstack((-lincost_y, b_eq_y)).T
+        ).T
 
         primal_sol_x = sol_x[:, 0 : self.nvar]
         primal_sol_y = sol_y[:, 0 : self.nvar]
@@ -798,32 +863,53 @@ class batch_crowd_nav:
         lamda_x,
         lamda_y,
     ):
-        wc_alpha_temp = x_guess - jnp.vstack((x_obs_trajectory[:, jnp.newaxis], x_obs_trajectory_dy[:, jnp.newaxis]))
-        ws_alpha_temp = y_guess - jnp.vstack((y_obs_trajectory[:, jnp.newaxis], y_obs_trajectory_dy[:, jnp.newaxis]))
+        wc_alpha_temp = x_guess - jnp.vstack(
+            (x_obs_trajectory[:, jnp.newaxis], x_obs_trajectory_dy[:, jnp.newaxis])
+        )
+        ws_alpha_temp = y_guess - jnp.vstack(
+            (y_obs_trajectory[:, jnp.newaxis], y_obs_trajectory_dy[:, jnp.newaxis])
+        )
 
         wc_alpha = wc_alpha_temp.transpose(1, 0, 2)
         ws_alpha = ws_alpha_temp.transpose(1, 0, 2)
 
-        wc_alpha = wc_alpha.reshape(self.num_batch, self.num * (self.num_obs_proj + self.num_obs_2))
-        ws_alpha = ws_alpha.reshape(self.num_batch, self.num * (self.num_obs_proj + self.num_obs_2))
+        wc_alpha = wc_alpha.reshape(
+            self.num_batch, self.num * (self.num_obs_proj + self.num_obs_2)
+        )
+        ws_alpha = ws_alpha.reshape(
+            self.num_batch, self.num * (self.num_obs_proj + self.num_obs_2)
+        )
 
         rad_a = jnp.hstack(
             (
-                self.a_obs_1 * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
+                self.a_obs_1
+                * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
                 self.a_obs_2 * jnp.ones((self.num_batch, self.num * (self.num_obs_2))),
             )
         )
         rad_b = jnp.hstack(
             (
-                self.b_obs_1 * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
+                self.b_obs_1
+                * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
                 self.b_obs_2 * jnp.ones((self.num_batch, self.num * (self.num_obs_2))),
             )
         )
 
         alpha_obs = jnp.arctan2(ws_alpha * rad_a, wc_alpha * rad_b)
 
-        c1_d = 1.0 * self.rho_obs * (rad_a**2 * jnp.cos(alpha_obs) ** 2 + rad_b**2 * jnp.sin(alpha_obs) ** 2)
-        c2_d = 1.0 * self.rho_obs * (rad_a * wc_alpha * jnp.cos(alpha_obs) + rad_b * ws_alpha * jnp.sin(alpha_obs))
+        c1_d = (
+            1.0
+            * self.rho_obs
+            * (rad_a**2 * jnp.cos(alpha_obs) ** 2 + rad_b**2 * jnp.sin(alpha_obs) ** 2)
+        )
+        c2_d = (
+            1.0
+            * self.rho_obs
+            * (
+                rad_a * wc_alpha * jnp.cos(alpha_obs)
+                + rad_b * ws_alpha * jnp.sin(alpha_obs)
+            )
+        )
 
         d_obs = c2_d / c1_d
         d_obs = jnp.maximum(
@@ -837,7 +923,11 @@ class batch_crowd_nav:
         ws_alpha_vy = ydot_guess
         alpha_v = jnp.arctan2(ws_alpha_vy, wc_alpha_vx)
         c1_d_v = 1.0 * self.rho_ineq * (jnp.cos(alpha_v) ** 2 + jnp.sin(alpha_v) ** 2)
-        c2_d_v = 1.0 * self.rho_ineq * (wc_alpha_vx * jnp.cos(alpha_v) + ws_alpha_vy * jnp.sin(alpha_v))
+        c2_d_v = (
+            1.0
+            * self.rho_ineq
+            * (wc_alpha_vx * jnp.cos(alpha_v) + ws_alpha_vy * jnp.sin(alpha_v))
+        )
         d_v = c2_d_v / c1_d_v
 
         d_v = jnp.minimum(self.v_max * jnp.ones((self.num_batch, self.num)), d_v)
@@ -848,7 +938,11 @@ class batch_crowd_nav:
         ws_alpha_ay = yddot_guess
         alpha_a = jnp.arctan2(ws_alpha_ay, wc_alpha_ax)
         c1_d_a = 1.0 * self.rho_ineq * (jnp.cos(alpha_a) ** 2 + jnp.sin(alpha_a) ** 2)
-        c2_d_a = 1.0 * self.rho_ineq * (wc_alpha_ax * jnp.cos(alpha_a) + ws_alpha_ay * jnp.sin(alpha_a))
+        c2_d_a = (
+            1.0
+            * self.rho_ineq
+            * (wc_alpha_ax * jnp.cos(alpha_a) + ws_alpha_ay * jnp.sin(alpha_a))
+        )
 
         d_a = c2_d_a / c1_d_a
 
@@ -898,45 +992,68 @@ class batch_crowd_nav:
         alpha_a_per,
         alpha_v_per,
     ):
-        wc_alpha_temp = x - jnp.vstack((x_obs_trajectory[:, jnp.newaxis], x_obs_trajectory_dy[:, jnp.newaxis]))
-        ws_alpha_temp = y - jnp.vstack((y_obs_trajectory[:, jnp.newaxis], y_obs_trajectory_dy[:, jnp.newaxis]))
+        wc_alpha_temp = x - jnp.vstack(
+            (x_obs_trajectory[:, jnp.newaxis], x_obs_trajectory_dy[:, jnp.newaxis])
+        )
+        ws_alpha_temp = y - jnp.vstack(
+            (y_obs_trajectory[:, jnp.newaxis], y_obs_trajectory_dy[:, jnp.newaxis])
+        )
 
         wc_alpha = wc_alpha_temp.transpose(1, 0, 2)
         ws_alpha = ws_alpha_temp.transpose(1, 0, 2)
 
-        wc_alpha = wc_alpha.reshape(self.num_batch, self.num * (self.num_obs_proj + self.num_obs_2))
-        ws_alpha = ws_alpha.reshape(self.num_batch, self.num * (self.num_obs_proj + self.num_obs_2))
+        wc_alpha = wc_alpha.reshape(
+            self.num_batch, self.num * (self.num_obs_proj + self.num_obs_2)
+        )
+        ws_alpha = ws_alpha.reshape(
+            self.num_batch, self.num * (self.num_obs_proj + self.num_obs_2)
+        )
 
         rad_a = jnp.hstack(
             (
-                self.a_obs_1 * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
+                self.a_obs_1
+                * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
                 self.a_obs_2 * jnp.ones((self.num_batch, self.num * (self.num_obs_2))),
             )
         )
         rad_b = jnp.hstack(
             (
-                self.b_obs_1 * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
+                self.b_obs_1
+                * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
                 self.b_obs_2 * jnp.ones((self.num_batch, self.num * (self.num_obs_2))),
             )
         )
 
         rad_a = jnp.hstack(
             (
-                self.a_obs_1 * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
+                self.a_obs_1
+                * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
                 self.a_obs_2 * jnp.ones((self.num_batch, self.num * (self.num_obs_2))),
             )
         )
         rad_b = jnp.hstack(
             (
-                self.b_obs_1 * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
+                self.b_obs_1
+                * jnp.ones((self.num_batch, self.num * (self.num_obs_proj))),
                 self.b_obs_2 * jnp.ones((self.num_batch, self.num * (self.num_obs_2))),
             )
         )
 
         alpha_obs = jnp.arctan2(ws_alpha * rad_a, wc_alpha * rad_b)
 
-        c1_d = 1.0 * self.rho_obs * (rad_a**2 * jnp.cos(alpha_obs) ** 2 + rad_b**2 * jnp.sin(alpha_obs) ** 2)
-        c2_d = 1.0 * self.rho_obs * (rad_a * wc_alpha * jnp.cos(alpha_obs) + rad_b * ws_alpha * jnp.sin(alpha_obs))
+        c1_d = (
+            1.0
+            * self.rho_obs
+            * (rad_a**2 * jnp.cos(alpha_obs) ** 2 + rad_b**2 * jnp.sin(alpha_obs) ** 2)
+        )
+        c2_d = (
+            1.0
+            * self.rho_obs
+            * (
+                rad_a * wc_alpha * jnp.cos(alpha_obs)
+                + rad_b * ws_alpha * jnp.sin(alpha_obs)
+            )
+        )
 
         d_obs = c2_d / c1_d
         d_obs = jnp.maximum(
@@ -950,7 +1067,11 @@ class batch_crowd_nav:
         ws_alpha_vy = ydot
         alpha_v = jnp.arctan2(ws_alpha_vy, wc_alpha_vx)
         c1_d_v = 1.0 * self.rho_ineq * (jnp.cos(alpha_v) ** 2 + jnp.sin(alpha_v) ** 2)
-        c2_d_v = 1.0 * self.rho_ineq * (wc_alpha_vx * jnp.cos(alpha_v) + ws_alpha_vy * jnp.sin(alpha_v))
+        c2_d_v = (
+            1.0
+            * self.rho_ineq
+            * (wc_alpha_vx * jnp.cos(alpha_v) + ws_alpha_vy * jnp.sin(alpha_v))
+        )
 
         d_v = c2_d_v / c1_d_v
         d_v = jnp.minimum(self.v_max * jnp.ones((self.num_batch, self.num)), d_v)
@@ -961,7 +1082,11 @@ class batch_crowd_nav:
         ws_alpha_ay = yddot
         alpha_a = jnp.arctan2(ws_alpha_ay, wc_alpha_ax)
         c1_d_a = 1.0 * self.rho_ineq * (jnp.cos(alpha_a) ** 2 + jnp.sin(alpha_a) ** 2)
-        c2_d_a = 1.0 * self.rho_ineq * (wc_alpha_ax * jnp.cos(alpha_a) + ws_alpha_ay * jnp.sin(alpha_a))
+        c2_d_a = (
+            1.0
+            * self.rho_ineq
+            * (wc_alpha_ax * jnp.cos(alpha_a) + ws_alpha_ay * jnp.sin(alpha_a))
+        )
 
         d_a = c2_d_a / c1_d_a
 
@@ -1168,7 +1293,9 @@ class batch_crowd_nav:
             lamda_y_init,
         )
 
-        carry_fin, result = lax.scan(lax_projection, carry_init, jnp.arange(self.maxitet_proj))
+        carry_fin, result = lax.scan(
+            lax_projection, carry_init, jnp.arange(self.maxitet_proj)
+        )
 
         (
             c_x,
@@ -1226,11 +1353,21 @@ class batch_crowd_nav:
         wc_alpha = wc_alpha.reshape(self.ellite_num_const, self.num * self.num_obs_1)
         ws_alpha = ws_alpha.reshape(self.ellite_num_const, self.num * self.num_obs_1)
 
-        wc_alpha_dy = wc_alpha_dy.reshape(self.ellite_num_const, self.num * self.num_obs_2)
-        ws_alpha_dy = ws_alpha_dy.reshape(self.ellite_num_const, self.num * self.num_obs_2)
+        wc_alpha_dy = wc_alpha_dy.reshape(
+            self.ellite_num_const, self.num * self.num_obs_2
+        )
+        ws_alpha_dy = ws_alpha_dy.reshape(
+            self.ellite_num_const, self.num * self.num_obs_2
+        )
 
-        dist_obs_st = -(wc_alpha**2) / (self.a_obs_1**2) - ws_alpha**2 / (self.b_obs_1**2) + 1
-        dist_obs_dy = -(wc_alpha_dy**2) / (self.a_obs_2**2) - ws_alpha_dy**2 / (self.b_obs_2**2) + 1
+        dist_obs_st = (
+            -(wc_alpha**2) / (self.a_obs_1**2) - ws_alpha**2 / (self.b_obs_1**2) + 1
+        )
+        dist_obs_dy = (
+            -(wc_alpha_dy**2) / (self.a_obs_2**2)
+            - ws_alpha_dy**2 / (self.b_obs_2**2)
+            + 1
+        )
 
         dist_obs = jnp.hstack((dist_obs_st, dist_obs_dy))
 
@@ -1248,10 +1385,13 @@ class batch_crowd_nav:
             axis=1,
         )
 
-        cost_smoothness = (jnp.linalg.norm(xddot, axis=1)) + (jnp.linalg.norm(yddot, axis=1))
+        cost_smoothness = (jnp.linalg.norm(xddot, axis=1)) + (
+            jnp.linalg.norm(yddot, axis=1)
+        )
         cost_track = jnp.linalg.norm(x - x_project, axis=1) + jnp.linalg.norm(
             y - y_project, axis=1
         )  # (x-x_project)**2+(y-y_project)**2
+
         cost_batch = (
             1.0 * res_norm_batch
             + self.weight_smoothness * cost_smoothness
@@ -1295,12 +1435,15 @@ class batch_crowd_nav:
         d = cost_batch
         d = jnp.exp(-(1 / self.lamda) * (d - beta_param))
         sum_d = jnp.sum(d, axis=0)
-        c_mean = (1 - self.alpha) * c_mean_prev + self.alpha * jnp.sum((c_ellite * d[:, jnp.newaxis]), axis=0) / sum_d
+        c_mean = (1 - self.alpha) * c_mean_prev + self.alpha * jnp.sum(
+            (c_ellite * d[:, jnp.newaxis]), axis=0
+        ) / sum_d
 
         diffs = c_ellite - c_mean
         prod_result = self.vec_product(diffs, d)
-        c_cov = (1 - self.alpha) * c_cov_prev + self.alpha * (
-            (jnp.sum(prod_result, axis=0)) / sum_d
+        c_cov = (
+            (1 - self.alpha) * c_cov_prev
+            + self.alpha * ((jnp.sum(prod_result, axis=0)) / sum_d)
         )  # (( sum_d**2 - jnp.sum(d**2, axis = 0))/jnp.sum(d, axis = 0)))+0.01*jnp.identity(2*self.nvar)
 
         c_ellite_shift_temp = jax.random.multivariate_normal(
@@ -1325,14 +1468,28 @@ class batch_crowd_nav:
         wc_alpha_dy = wc_alpha_temp_dy.transpose(1, 0, 2)
         ws_alpha_dy = ws_alpha_temp_dy.transpose(1, 0, 2)
 
-        wc_alpha = wc_alpha.reshape(self.num_batch * self.initial_up_sampling, self.num * self.num_obs_1)
-        ws_alpha = ws_alpha.reshape(self.num_batch * self.initial_up_sampling, self.num * self.num_obs_1)
+        wc_alpha = wc_alpha.reshape(
+            self.num_batch * self.initial_up_sampling, self.num * self.num_obs_1
+        )
+        ws_alpha = ws_alpha.reshape(
+            self.num_batch * self.initial_up_sampling, self.num * self.num_obs_1
+        )
 
-        wc_alpha_dy = wc_alpha_dy.reshape(self.num_batch * self.initial_up_sampling, self.num * self.num_obs_2)
-        ws_alpha_dy = ws_alpha_dy.reshape(self.num_batch * self.initial_up_sampling, self.num * self.num_obs_2)
+        wc_alpha_dy = wc_alpha_dy.reshape(
+            self.num_batch * self.initial_up_sampling, self.num * self.num_obs_2
+        )
+        ws_alpha_dy = ws_alpha_dy.reshape(
+            self.num_batch * self.initial_up_sampling, self.num * self.num_obs_2
+        )
 
-        dist_obs_st = -(wc_alpha**2) / (self.a_obs_1**2) - ws_alpha**2 / (self.b_obs_1**2) + 1
-        dist_obs_dy = -(wc_alpha_dy**2) / (self.a_obs_2**2) - ws_alpha_dy**2 / (self.b_obs_2**2) + 1
+        dist_obs_st = (
+            -(wc_alpha**2) / (self.a_obs_1**2) - ws_alpha**2 / (self.b_obs_1**2) + 1
+        )
+        dist_obs_dy = (
+            -(wc_alpha_dy**2) / (self.a_obs_2**2)
+            - ws_alpha_dy**2 / (self.b_obs_2**2)
+            + 1
+        )
 
         dist_obs = jnp.hstack((dist_obs_st, dist_obs_dy))
 
@@ -1351,8 +1508,12 @@ class batch_crowd_nav:
 
         idx_ellite = jnp.argsort(cost_obs_penalty)
 
-        c_x_ellite_shift = c_x_ellite_shift_temp[idx_ellite[0 : self.num_batch - self.ellite_num_const]]
-        c_y_ellite_shift = c_y_ellite_shift_temp[idx_ellite[0 : self.num_batch - self.ellite_num_const]]
+        c_x_ellite_shift = c_x_ellite_shift_temp[
+            idx_ellite[0 : self.num_batch - self.ellite_num_const]
+        ]
+        c_y_ellite_shift = c_y_ellite_shift_temp[
+            idx_ellite[0 : self.num_batch - self.ellite_num_const]
+        ]
 
         sol_x_bar = jnp.vstack((c_x_ellite, c_x_ellite_shift))
         sol_y_bar = jnp.vstack((c_y_ellite, c_y_ellite_shift))
@@ -1438,25 +1599,27 @@ class batch_crowd_nav:
         c_cov_prev = c_cov
 
         for i in range(0, self.maxiter_cem):
-            c_x, c_y, x, xdot, xddot, y, ydot, yddot, res_norm_batch = self.compute_projection_sampling(
-                key,
-                sol_x_bar,
-                sol_y_bar,
-                x_obs_trajectory_proj,
-                y_obs_trajectory_proj,
-                x_obs_trajectory_dy,
-                y_obs_trajectory_dy,
-                lamda_x,
-                lamda_y,
-                x_guess,
-                y_guess,
-                xdot_guess,
-                ydot_guess,
-                xddot_guess,
-                yddot_guess,
-                initial_state,
-                x_fin,
-                y_fin,
+            c_x, c_y, x, xdot, xddot, y, ydot, yddot, res_norm_batch = (
+                self.compute_projection_sampling(
+                    key,
+                    sol_x_bar,
+                    sol_y_bar,
+                    x_obs_trajectory_proj,
+                    y_obs_trajectory_proj,
+                    x_obs_trajectory_dy,
+                    y_obs_trajectory_dy,
+                    lamda_x,
+                    lamda_y,
+                    x_guess,
+                    y_guess,
+                    xdot_guess,
+                    ydot_guess,
+                    xddot_guess,
+                    yddot_guess,
+                    initial_state,
+                    x_fin,
+                    y_fin,
+                )
             )
 
             idx_ellite_projection = jnp.argsort(res_norm_batch)
@@ -1473,7 +1636,9 @@ class batch_crowd_nav:
             c_x_ellite = c_x[idx_ellite_projection[0 : self.ellite_num_const]]
             c_y_ellite = c_y[idx_ellite_projection[0 : self.ellite_num_const]]
 
-            res_norm_batch_proj = res_norm_batch[idx_ellite_projection[0 : self.ellite_num_const]]
+            res_norm_batch_proj = res_norm_batch[
+                idx_ellite_projection[0 : self.ellite_num_const]
+            ]
 
             x_guess_flat = x_ellite.reshape(self.ellite_num_const * self.num)
             y_guess_flat = y_ellite.reshape(self.ellite_num_const * self.num)

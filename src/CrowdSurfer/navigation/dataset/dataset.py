@@ -41,8 +41,12 @@ class OverallDataset(Dataset):
         self.static_obstacle_type = dataset_configuration.static_obstacle_type
 
         self.projection_padding_value = projection_configuration.padding
-        self.num_projection_dynamic_obstacles = projection_configuration.max_dynamic_obstacles
-        self.num_projection_static_obstacles = projection_configuration.max_static_obstacles
+        self.num_projection_dynamic_obstacles = (
+            projection_configuration.max_dynamic_obstacles
+        )
+        self.num_projection_static_obstacles = (
+            projection_configuration.max_static_obstacles
+        )
 
         self.data_lengths: List[int] = []
         bag_file_names: List[str] = []
@@ -77,9 +81,13 @@ class OverallDataset(Dataset):
 
         # Find the bag file that contains the trajectory at index idx (where idx is the index of the coefficients), Each bag file contains N trajectories each with either 1 or 80
         bag_idx = 0
-        trajectory_idx = idx // self.total_coefficients  # Get the index of the trajectory within the bag file
+        trajectory_idx = (
+            idx // self.total_coefficients
+        )  # Get the index of the trajectory within the bag file
 
-        coefficient_idx = idx % self.total_coefficients  # Get the index of the coefficient within the trajectory
+        coefficient_idx = (
+            idx % self.total_coefficients
+        )  # Get the index of the coefficient within the trajectory
 
         for coefficient_configuration in self.coefficient_configuration:
             num_coefficients = self.num_coefficients[coefficient_configuration]
@@ -116,12 +124,16 @@ class OverallDataset(Dataset):
             ).transpose(-1, -2)
         elif coefficient[0] is CoefficientConfiguration.ELITE_EXPERT:
             coefficients = torch.tensor(
-                bag_file[DataKeys.ELITE_EXPERT_COEFFICIENTS][trajectory_idx][coefficient[1]],
+                bag_file[DataKeys.ELITE_EXPERT_COEFFICIENTS][trajectory_idx][
+                    coefficient[1]
+                ],
                 dtype=torch.float32,
             ).transpose(-1, -2)
         elif coefficient[0] is CoefficientConfiguration.ELITE_PRIEST:
             coefficients = torch.tensor(
-                bag_file[DataKeys.ELITE_PRIEST_COEFFICIENTS][trajectory_idx][coefficient[1]],
+                bag_file[DataKeys.ELITE_PRIEST_COEFFICIENTS][trajectory_idx][
+                    coefficient[1]
+                ],
                 dtype=torch.float32,
             ).transpose(-1, -2)
 
@@ -170,7 +182,9 @@ class OverallDataset(Dataset):
             "projection_goal_position": goal_position,
         }
 
-    def _get_obstacle_projection_data(self, bag_file: Dict[str, np.ndarray], trajectory_idx: int) -> Dict[str, Tensor]:
+    def _get_obstacle_projection_data(
+        self, bag_file: Dict[str, np.ndarray], trajectory_idx: int
+    ) -> Dict[str, Tensor]:
         point_cloud = torch.tensor(
             bag_file[DataKeys.POINT_CLOUD][trajectory_idx],
             dtype=torch.float32,
@@ -181,16 +195,19 @@ class OverallDataset(Dataset):
             bag_file[DataKeys.DYNAMIC_OBSTACLES][trajectory_idx],
             dtype=torch.float32,
         ).transpose(-1, -2)  # shape: (5, num_obstacles)
-        dynamic_obstacles[torch.isnan(dynamic_obstacles)] = self.projection_padding_value
+        dynamic_obstacles[torch.isnan(dynamic_obstacles)] = (
+            self.projection_padding_value
+        )
 
         obstacle_positions = torch.zeros(
             2,
-            self.num_projection_dynamic_obstacles + self.num_projection_static_obstacles,
+            self.num_projection_dynamic_obstacles
+            + self.num_projection_static_obstacles,
         )  # shape: (2, total_obstacles)
 
-        obstacle_positions[:, : min(self.num_projection_dynamic_obstacles, dynamic_obstacles.shape[1])] = (
-            dynamic_obstacles[1:3, : self.num_projection_dynamic_obstacles]
-        )
+        obstacle_positions[
+            :, : min(self.num_projection_dynamic_obstacles, dynamic_obstacles.shape[1])
+        ] = dynamic_obstacles[1:3, : self.num_projection_dynamic_obstacles]
         obstacle_positions[
             :,
             self.num_projection_dynamic_obstacles : self.num_projection_dynamic_obstacles
@@ -199,19 +216,22 @@ class OverallDataset(Dataset):
 
         obstacle_velocities = torch.zeros(
             2,
-            self.num_projection_dynamic_obstacles + self.num_projection_static_obstacles,
+            self.num_projection_dynamic_obstacles
+            + self.num_projection_static_obstacles,
         )
 
-        obstacle_velocities[:, : min(self.num_projection_dynamic_obstacles, dynamic_obstacles.shape[1])] = (
-            dynamic_obstacles[3:5, : self.num_projection_dynamic_obstacles]
-        )
+        obstacle_velocities[
+            :, : min(self.num_projection_dynamic_obstacles, dynamic_obstacles.shape[1])
+        ] = dynamic_obstacles[3:5, : self.num_projection_dynamic_obstacles]
 
         return {
             "projection_obstacle_positions": obstacle_positions,
             "projection_obstacle_velocities": obstacle_velocities,
         }
 
-    def _get_observation_data(self, bag_file: Dict[str, np.ndarray], trajectory_idx: int) -> Dict[str, Tensor]:
+    def _get_observation_data(
+        self, bag_file: Dict[str, np.ndarray], trajectory_idx: int
+    ) -> Dict[str, Tensor]:
         # Get the point cloud and dynamic obstacles for the current and previous timesteps
         # If the current timestep is the first timestep, the previous timestep is padded with zeros
 
@@ -233,13 +253,17 @@ class OverallDataset(Dataset):
             ).unsqueeze(0)
             static_obstacles = torch.rot90(static_obstacles, 1, dims=(1, 2))
         else:
-            raise ValueError(f"Invalid static obstacle type: {self.static_obstacle_type}")
+            raise ValueError(
+                f"Invalid static obstacle type: {self.static_obstacle_type}"
+            )
 
         dynamic_obstacles = torch.tensor(
             bag_file[DataKeys.DYNAMIC_OBSTACLES][indices],
             dtype=torch.float32,
         ).transpose(-1, -2)  # shape: (num_timesteps, 5, num_obstacles)
-        dynamic_obstacles[torch.tensor(invalid_indices, dtype=torch.bool)] = self.padding_value
+        dynamic_obstacles[torch.tensor(invalid_indices, dtype=torch.bool)] = (
+            self.padding_value
+        )
 
         # Replace invalid indices with padding value
         static_obstacles[torch.isnan(static_obstacles)] = self.padding_value
@@ -258,7 +282,9 @@ class OverallDataset(Dataset):
             "heading_to_goal": heading_to_goal,
         }
 
-    def _get_odometry_data(self, bag_file: Dict[str, np.ndarray], trajectory_idx: int) -> Dict[str, Tensor]:
+    def _get_odometry_data(
+        self, bag_file: Dict[str, np.ndarray], trajectory_idx: int
+    ) -> Dict[str, Tensor]:
         odometry = torch.tensor(
             bag_file[DataKeys.ODOMETRY][trajectory_idx],
             dtype=torch.float32,
@@ -291,7 +317,9 @@ class ScoringNetworkDataset(OverallDataset):
             projection_configuration=projection_configuration,
             type=type,
         )
-        assert self.total_coefficients == 1, "Scoring network does not support multiple or elite coefficients"
+        assert self.total_coefficients == 1, (
+            "Scoring network does not support multiple or elite coefficients"
+        )
 
     def __getitem__(self, idx) -> Dict[str, Tensor]:
         bag_idx, trajectory_idx, coefficient = self._get_indices(idx)

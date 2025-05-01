@@ -106,13 +106,13 @@ class ScoringNetworkTrainer(Trainer):
 
             self.priest_planner = PriestPlanner(
                 num_dynamic_obstacles=self.max_projection_dynamic_obstacles,
-                num_obstacles=self.max_projection_static_obstacles,
-                t_fin=configuration.dataset.trajectory_time,
-                num=configuration.dataset.trajectory_length,
-                weight_track=1.2,
+                num_static_obstacles=self.max_projection_static_obstacles,
+                time_horizon=configuration.dataset.trajectory_time,
+                trajectory_length=configuration.dataset.trajectory_length,
+                tracking_weight=1.2,
                 num_waypoints=configuration.dataset.trajectory_length,
-                num_batch=self.num_samples,
-                max_iter_cem=configuration.projection.num_priest_iterations,
+                trajectory_batch_size=self.num_samples,
+                max_outer_iterations=configuration.projection.num_priest_iterations,
             )
 
     def _get_probability_distribution_and_embedding_from_pixelcnn(self, data: Dict[str, Tensor]):
@@ -189,65 +189,63 @@ class ScoringNetworkTrainer(Trainer):
         )  # shape: (batch_size * num_samples, 2, 11)
 
     def _run_priest(self, coefficients: Tensor, data: Dict[str, Tensor]) -> Tensor:
-        self.priest_planner.x_init = 0
-        self.priest_planner.y_init = 0
-        self.priest_planner.theta_init = 0
-
-        self.priest_planner.vx_init = data["projection_ego_velocity"][0, 0].cpu().numpy().item()
-        self.priest_planner.vy_init = data["projection_ego_velocity"][0, 1].cpu().numpy().item()
-
-        # Setting PRIEST goal as the final odometry positions of the current rosbag
-        self.priest_planner.x_fin = data["projection_goal_position"][0, 0].cpu().numpy().item()
-        self.priest_planner.y_fin = data["projection_goal_position"][0, 1].cpu().numpy().item()
-
-        if self.use_obstacle_constraints_for_guidance:
-            self.priest_planner.update_obstacle_pointcloud(
-                np.column_stack(
-                    (
-                        data["projection_obstacle_positions"][0, 0, self.max_projection_dynamic_obstacles :]
-                        .cpu()
-                        .numpy(),
-                        data["projection_obstacle_positions"][0, 1, self.max_projection_dynamic_obstacles :]
-                        .cpu()
-                        .numpy(),
-                        np.zeros_like(
-                            data["projection_obstacle_positions"][0, 0, self.max_projection_dynamic_obstacles :]
-                            .cpu()
-                            .numpy()
-                        ),
-                    )
-                )
-            )
-
-        # Padding for redundant obstacles
-        self.priest_planner.x_obs_init_dy.fill(1000.0)
-        self.priest_planner.y_obs_init_dy.fill(1000.0)
-        self.priest_planner.vx_obs_dy.fill(0.0)
-        self.priest_planner.vy_obs_dy.fill(0.0)
-
-        if self.use_obstacle_constraints_for_guidance:
-            self.priest_planner.x_obs_init_dy = (
-                data["projection_obstacle_positions"][0, 0, : self.max_projection_dynamic_obstacles].cpu().numpy()
-            )
-            self.priest_planner.y_obs_init_dy = (
-                data["projection_obstacle_positions"][0, 1, : self.max_projection_dynamic_obstacles].cpu().numpy()
-            )
-            self.priest_planner.vx_obs_dy = (
-                data["projection_obstacle_velocities"][0, 0, : self.max_projection_dynamic_obstacles].cpu().numpy()
-            )
-            self.priest_planner.vx_obs_dy = (
-                data["projection_obstacle_velocities"][0, 1, : self.max_projection_dynamic_obstacles].cpu().numpy()
-            )
-
         elites_x = []
         elites_y = []
         coefficients = coefficients.unflatten(0, (-1, self.num_samples))
         for i in range(coefficients.shape[0]):
             _, _, _, _, c_x_elite, c_y_elite, _, _, _ = self.priest_planner.run_optimization(
-                # custom_x_waypoint=pixelcnn_trajectory_x.detach().cpu().numpy(),
-                # custom_y_waypoint=pixelcnn_trajectory_y.detach().cpu().numpy(),
-                custom_x_coefficient=coefficients[i, :, 0, :].cpu().numpy(),
-                custom_y_coefficient=coefficients[i, :, 1, :].cpu().numpy(),
+                initial_x_position=0,
+                initial_y_position=0,
+                initial_x_velocity=data["projection_ego_velocity"][0, 0].cpu().numpy().item(),
+                initial_y_velocity=data["projection_ego_velocity"][0, 1].cpu().numpy().item(),
+                initial_x_acceleration=0,
+                initial_y_acceleration=0,
+                goal_x_position=data["projection_goal_position"][0, 0].cpu().numpy().item(),
+                goal_y_position=data["projection_goal_position"][0, 1].cpu().numpy().item(),
+                dynamic_obstacle_x_positions=data["projection_obstacle_positions"][
+                    0, 0, : self.max_projection_dynamic_obstacles
+                ]
+                .cpu()
+                .numpy()
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                dynamic_obstacle_y_positions=data["projection_obstacle_positions"][
+                    0, 1, : self.max_projection_dynamic_obstacles
+                ]
+                .cpu()
+                .numpy()
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                dynamic_obstacle_x_velocities=data["projection_obstacle_velocities"][
+                    0, 0, : self.max_projection_dynamic_obstacles
+                ]
+                .cpu()
+                .numpy()
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                dynamic_obstacle_y_velocities=data["projection_obstacle_velocities"][
+                    0, 1, : self.max_projection_dynamic_obstacles
+                ]
+                .cpu()
+                .numpy()
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                static_obstacle_x_positions=data["projection_obstacle_positions"][
+                    0, 0, self.max_projection_dynamic_obstacles :
+                ]
+                .cpu()
+                .numpy()
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                static_obstacle_y_positions=data["projection_obstacle_positions"][
+                    0, 1, self.max_projection_dynamic_obstacles :
+                ]
+                .cpu()
+                .numpy()
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                custom_x_coefficients=coefficients[i, :, 0, :].cpu().numpy(),
+                custom_y_coefficients=coefficients[i, :, 1, :].cpu().numpy(),
             )
             elites_x.append(c_x_elite)
             elites_y.append(c_y_elite)
