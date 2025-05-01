@@ -11,7 +11,7 @@ from torch import Tensor
 import configuration
 from configuration import GuidanceType, Mode, StaticObstacleType
 from navigation.constants import DataDirectories
-from navigation.dataset import PixelCNNDataset
+from navigation.dataset import PixelCNNDataset  # new
 from navigation.model import VQVAE, CombinedPixelCNN
 from navigation.projection_guidance import ProjectionGuidance
 from navigation.utilities import project_coefficients
@@ -303,3 +303,18 @@ class PixelCNNTrainer(Trainer):
             plt.show()
 
         plt.close()
+
+    # def load_model(self, model_path: str):
+    #     ws = os.path.abspath(__package__)
+    #     ws = ws[:-36]
+    #     model_path = os.path.join(ws,model_path)
+    #     if not os.path.exists(model_path):
+    #         raise FileNotFoundError(f"Model file not found: {model_path}")
+
+    #     self.model.load_state_dict(torch.load(model_path, map_location=self.accelerator.device))
+    #     self.model.eval()
+    #     print(f"Model loaded successfully from {model_path}")
+
+    # def load_and_infer(self, model_path: str):
+    #     self.load_model(model_path)
+    #     self.inference()

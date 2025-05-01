@@ -4,7 +4,9 @@
 
 <sup>1</sup>_Robotics Research Center, IIIT Hyderabad_; <sup>2</sup>_University of Tartu, Estonia_
 
-\*Equal Contribution
+\* denotes equal contribution
+
+Accepted at IEEE International Conference on Robotics and Automation (ICRA) 2025
 
 [Paper](https://arxiv.org/abs/2409.16011) | [Video](https://youtu.be/BMDCYdxfaXM) | [Website](https://smart-wheelchair-rrc.github.io/CrowdSurfer-webpage/)
 
@@ -18,12 +20,48 @@ Navigation amongst densely packed crowds remains a challenge for mobile robots. 
 
 This repository contains the code for the paper "CrowdSurfer: Sampling Optimization Augmented with Vector-Quantized Variational AutoEncoder for Dense Crowd Navigation".
 
-The code is divided into 3 main scripts: [`main.py`](./main.py), [`process_bags.py`](./process_bags.py), and [`ros_interface.py`](./ros_interface.py).
-All configuration is done via [this configuration file](./configuration/configuration.yaml).
+All configuration is done via [this configuration file](./src/CrowdSurfer/configuration/configuration.yaml).
+To run once setup, use this [script](./src/CrowdSurfer/run_CrowdSurfer.sh) to run the code in a tmux session.
 
-To run once setup, use this [script](./run_CrowdSurfer.sh) to run the code in a tmux session.
+## Installation
 
-## Modes
+Setup your conda environment called "crowdsurfer" with the following packages:
+
+-   CUDA 12.1
+-   PyTorch
+-   JAX
+-   Hydra
+-   HuggingFace Accelerate
+-   Open3D
+-   Scikit Learn
+
+Running the simulation in gazebo requires pedsim_ros (to simulate the humans).
+To install pedsim_ros and its other dependencies, proceed as follows:
+The default version is ROS Noetic.
+
+```bash
+mkdir -p crowdsurfer_ws/src && cd crowdsurfer_ws/src
+git clone https://github.com/TempleRAIL/robot_gazebo.git
+git clone https://github.com/Smart-Wheelchair-RRC/pedsim_ros_with_gazebo.git
+wget https://raw.githubusercontent.com/zzuxzt/turtlebot2_noetic_packages/master/turtlebot2_noetic_install.sh
+sudo sh turtlebot2_noetic_install.sh
+git clone https://github.com/Smart-Wheelchair-RRC/CrowdSurfer.git
+cd ..
+catkin build
+```
+
+## Run Demo
+
+Download checkpoints from [this link](https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s)
+
+1. Replace the checkpoint paths for VQVAE and Scoring Network in the [configuration file](./src/CrowdSurfer/configuration/configuration.yaml)
+2. From within crowdsurfer_ws/ in tmux, run:
+
+```bash
+bash src/CrowdSurfer/src/CrowdSurfer/run_CrowdSurfer.sh
+```
+
+## Functionalities
 
 1. TRAIN_VQVAE
 2. TRAIN_PIXELCNN
@@ -35,9 +73,9 @@ To run once setup, use this [script](./run_CrowdSurfer.sh) to run the code in a 
 
 ## INFERENCE_COMPLETE
 
-Runs the entire pipeline in open loop and saves the visualization in the output directory. To run this configuration, please make the following changes:
+Runs the entire pipeline and saves the visualization in the output directory. To run this configuration, please make the following changes:
 
-1. Provide the full path for the best checkpoints of both models (VQVAE and PixelCNN).
+1. Provide the full path for the best checkpoints of all three models (VQVAE, PixelCNN and Scoring-Network).
 
     - You might have to add "pytorch_model.bin" at the end depending upon the version of HF Accelerator you are using.
 
@@ -65,8 +103,4 @@ This mode visualizes the processed dataset.
 
 1. Set the mode as "VISUALIZE".
 2. Set the dataset path, and coefficient configuration.
-3. Put processed bag files in a folder called `inference`. The auto generated `index.txt` should also be present in the folder.
-
----
-
-Note: This README is a work in progress, and information about other modes will be added soon.
+3. Put processed bag files in a folder called `inference`. `index.txt` should also be present in the folder.

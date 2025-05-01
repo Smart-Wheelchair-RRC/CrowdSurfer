@@ -17,18 +17,26 @@ from .configuration import (
 )
 
 
-def initialize_configuration(function: Callable, configuration_name: str = "configuration") -> Callable:
+def initialize_configuration(
+    function: Callable, configuration_name: str = "configuration"
+) -> Callable:
     cs = ConfigStore.instance()
     cs.store(name="base_configuration", node=Configuration)
     cs.store(group="vqvae", name="base_vqvae", node=VQVAEConfiguration)
     cs.store(group="pixelcnn", name="base_pixelcnn", node=PixelCNNConfiguration)
-    cs.store(group="scoring_network", name="base_scoring_network", node=ScoringNetworkConfiguration)
+    cs.store(
+        group="scoring_network",
+        name="base_scoring_network",
+        node=ScoringNetworkConfiguration,
+    )
     cs.store(group="trainer", name="base_trainer", node=TrainerConfiguration)
     cs.store(group="dataset", name="base_dataset", node=DatasetConfiguration)
     cs.store(group="projection", name="base_projection", node=ProjectionConfiguration)
     cs.store(group="live", name="base_live", node=LiveConfiguration)
 
-    return hydra.main(config_path="configuration", config_name=configuration_name)(function)
+    return hydra.main(config_path="configuration", config_name=configuration_name)(
+        function
+    )
 
 
 def check_configuration(configuration: Configuration) -> None:

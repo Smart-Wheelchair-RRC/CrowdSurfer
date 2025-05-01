@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 
 import os
+import time
 
 import message_filters
 import numpy as np
 import rospy
 
-import time
-
 # from tf.transformations import euler_from_quaternion
 import tf
 from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry, Path
-from pedsim_msgs.msg import AgentStates
+from pedsim_msgs.msg import AgentStates, TrackedPersons  # type: ignore
 from sensor_msgs.msg import LaserScan, PointCloud
-from std_msgs.msg import Header
+from std_msgs.msg import Empty, Header
 from tf.transformations import euler_from_quaternion, quaternion_matrix
 from visualization_msgs.msg import MarkerArray
 
 from configuration import (
     Configuration,
-    Dynamic_Obstacles_Msg_Type,
+    DynamicObstaclesMessageType,
     Mode,
     check_configuration,
     initialize_configuration,
@@ -29,149 +28,160 @@ from inference import LivePipeline
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
+from dataclasses import dataclass
+from typing import Optional, Union
+
+from std_srvs.srv import Empty as EmptyService
+
+from processing import per_timestep_processing_functions as processing_functions
+
+pause_physics_service = None
+unpause_physics_service = None
+
+
+@dataclass
+class PlanningData:
+    """
+    Dataclass to store the data required for planning
+    All values are in ego frame, except odometry which is in world frame
+    Dynamic obstacles include the past 5 timesteps of dynamic obstacles
+    """
+
+    goal: np.ndarray
+    velocity: np.ndarray
+    acceleration: np.ndarray
+    point_cloud: np.ndarray
+    laser_scan: np.ndarray
+    dynamic_obstacles: np.ndarray
+    update_waypoints: bool = False  # True
+    sub_goal: Optional[np.ndarray] = None
+    # global_path: Optional[np.ndarray] = None
+
 
 class ROSInterface:
     def __init__(self, configuration: Configuration):
         self.pipeline = LivePipeline(configuration)
-
-        self.Pdot = self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL.detach().cpu().numpy()
-        self.Pddot = self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_SECOND_DIFFERENTIAL.detach().cpu().numpy()
-
-        ## use if acceleration output is required
-        # self.Pddot = (
-        #     self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_SECOND_DIFFERENTIAL.detach()
-        #     .cpu()
-        #     .numpy()
-        # )
-        # self.config = configuration
-
         self.total_rollout_time = 0
         self.num_rollouts = 0
+        self.time_horizon = configuration.dataset.trajectory_time
+        self.threshold_distance = configuration.live.threshold_distance
+        self.obstacle_padding = configuration.projection.padding
+        self.use_global_path = configuration.live.use_global_path
+        self.max_static_obstacles = configuration.projection.max_static_obstacles
+
+        self.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL = (
+            self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL.detach().cpu().numpy()
+        )
+        self.BERNSTEIN_POLYNOMIALS_SECOND_DIFFERENTIAL = (
+            self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_SECOND_DIFFERENTIAL.detach().cpu().numpy()
+        )
 
         self.world_frame = configuration.live.world_frame
         self.robot_base_frame = configuration.live.robot_base_frame
-        self.odom = np.full((3), 0.0)
-        self.laser_scan = np.full((2, 1080), configuration.projection.padding)
-        self.point_cloud = np.full((2, 1000), configuration.projection.padding)
-        # self.point_cloud = np.arange(2000).reshape(2, 1000)
-        self.vel = [0, 0]
-        self.acc = [0, 0]
-        self.dynamic_obstacles = np.full(
-            (
-                configuration.live.previous_time_steps_for_dynamic,
-                4,
-                self.pipeline.max_projection_dynamic_obstacles,
+
+        self.num_control_samples = 6
+
+        self.planning_data = PlanningData(
+            goal=np.zeros((2), dtype=np.float32),
+            velocity=np.zeros((2), dtype=np.float32),
+            acceleration=np.zeros((2), dtype=np.float32),
+            laser_scan=np.full((2, 1080), configuration.projection.padding, dtype=np.float32),
+            point_cloud=np.full((2, 1000), configuration.projection.padding, dtype=np.float32),
+            dynamic_obstacles=np.concatenate(
+                (
+                    np.full(
+                        (5, 2, self.pipeline.max_projection_dynamic_obstacles),
+                        configuration.projection.padding,
+                        dtype=np.float32,
+                    ),
+                    np.zeros((5, 2, self.pipeline.max_projection_dynamic_obstacles), dtype=np.float32),
+                ),
+                axis=1,
             ),
-            configuration.projection.padding,
         )
-        self.dynamic_obstacles[:, 2:, :] = 0
+        self.goal = np.zeros((2), dtype=np.float32)
 
-        self.listener = tf.TransformListener()
-        self.sub_scan = message_filters.Subscriber(configuration.live.laser_scan_topic, LaserScan)
-        self.sub_pcd = message_filters.Subscriber(configuration.live.point_cloud_topic, PointCloud)
-        self.sub_odom = message_filters.Subscriber(configuration.live.odometry_topic, Odometry)
+        # Setup Subscribers
+        self.transform_listener = tf.TransformListener()
+        self.laser_scan_subscriber = message_filters.Subscriber(configuration.live.laser_scan_topic, LaserScan)
+        self.point_cloud_subscriber = message_filters.Subscriber(configuration.live.point_cloud_topic, PointCloud)
 
-        ts = message_filters.ApproximateTimeSynchronizer(
-            [self.sub_odom, self.sub_pcd, self.sub_scan],
+        time_synchronizer = message_filters.ApproximateTimeSynchronizer(
+            [self.point_cloud_subscriber, self.laser_scan_subscriber],
             queue_size=20,
             slop=1,
             allow_headerless=True,
         )
-        ts.registerCallback(self.callback)
+        time_synchronizer.registerCallback(self.point_cloud_and_laser_scan_callback)
 
-        self.create_dynamic_obstacle_subscriber(
-            configuration.live.dynamic_obstacle_topic, configuration.live.dynamic_msg
-        )
+        # self.point_cloud_subscriber = rospy.Subscriber(
+        #     configuration.live.point_cloud_topic, PointCloud, self.point_cloud_callback
+        # )
 
-        self.received_goal = False
-        self.goal = [0, 0]
-        self.goal_in_current_frame = self.goal
-        self.sub_goal = rospy.Subscriber(configuration.live.goal_topic, PoseStamped, self.update_goal)
-
-        self.pub_vel = rospy.Publisher(configuration.live.velocity_command_topic, Twist, queue_size=10)
-        self.pub_path = rospy.Publisher(configuration.live.path_topic, Path, queue_size=10)
-
-        # rospy.Timer(rospy.Duration(10), self.timer_callback)
-
-        self.num_sample = 6
-        # self.i = -1
-
-    def create_dynamic_obstacle_subscriber(self, topic_name: str, msg_type: Dynamic_Obstacles_Msg_Type):
-        if msg_type == Dynamic_Obstacles_Msg_Type.MARKER_ARRY:
-            self.sub_dynamic = rospy.Subscriber(
-                topic_name,
-                MarkerArray,
-                self.update_dynamic_obstacles_from_marker_array,
+        if configuration.live.dynamic_obstacle_message_type is DynamicObstaclesMessageType.MARKER_ARRAY:
+            self.dynamic_obstacle_subscriber = rospy.Subscriber(
+                configuration.live.dynamic_obstacle_topic, MarkerArray, self.dynamic_obstacle_callback
             )
-        elif msg_type == Dynamic_Obstacles_Msg_Type.AGENT_STATES:
-            self.sub_dynamic = rospy.Subscriber(
-                topic_name, AgentStates, self.update_dynamic_obstacles_from_agent_states
+        elif configuration.live.dynamic_obstacle_message_type is DynamicObstaclesMessageType.AGENT_STATES:
+            self.dynamic_obstacle_subscriber = rospy.Subscriber(
+                configuration.live.dynamic_obstacle_topic, AgentStates, self.dynamic_obstacle_callback
             )
-
+        elif configuration.live.dynamic_obstacle_message_type is DynamicObstaclesMessageType.TRACKED_PERSONS:
+            self.sub_dynamic = rospy.Subscriber(
+                configuration.live.dynamic_obstacle_topic, TrackedPersons, self.dynamic_obstacle_callback
+            )
         else:
             raise NotImplementedError(
-                f"For dynamic obstacles, support for message type {msg_type.name} hasn't been implmented yet"
+                f"For dynamic obstacles, support for message type {configuration.live.dynamic_obstacle_message_type.name} hasn't been implemented yet"
             )
 
-    def update_goal(self, goal: PoseStamped):
-        # _, _, yaw = euler_from_quaternion([goal.pose.orientation.x, goal.pose.orientation.y, goal.pose.orientation.z, goal.pose.orientation.w])
-        # self.goal = [goal.pose.position.x, goal.pose.position.y, yaw]
-        self.goal = [goal.pose.position.x, goal.pose.position.y]
-        self.heading_to_goal = np.arctan2(self.goal[1], self.goal[0])
+        self.goal_subscriber = rospy.Subscriber(
+            configuration.live.goal_topic, PoseStamped, self.goal_callback, queue_size=10
+        )
+
+        if self.use_global_path:
+            # self.global_path_subscriber = rospy.Subscriber(
+            #     configuration.live.global_path_topic, Path, self.global_path_callback
+            # )
+            self.sub_goal_subscriber = rospy.Subscriber(
+                configuration.live.sub_goal_topic, PoseStamped, self.sub_goal_callback
+            )
+
+        # Setup Publishers
+        self.velocity_publisher = rospy.Publisher(configuration.live.velocity_command_topic, Twist, queue_size=10)
+        self.path_publisher = rospy.Publisher(configuration.live.path_topic, Path, queue_size=10)
+        self.goal_reached_publisher = rospy.Publisher("/reached_goal", Empty, queue_size=10)
+
+        self.received_goal = False
+
+    def _reached_goal(self, threshold_distance: float):
+        if np.linalg.norm(self.planning_data.goal) <= threshold_distance:
+            self.received_goal = False
+            self.goal_reached_publisher.publish()
+            if self.num_rollouts != 0:
+                print("Reached Goal")
+                print("Average Rollout Time: ", self.total_rollout_time / self.num_rollouts)
+            self.total_rollout_time = 0
+            self.num_rollouts = 0
+            return True
+        return False
+
+    def sub_goal_callback(self, sub_goal: PoseStamped):
+        self.planning_data.sub_goal = np.array([sub_goal.pose.position.x, sub_goal.pose.position.y])
+
+    # def global_path_callback(self, global_path: Path):
+    #     print("Received plan")
+    #     waypoints = global_path.poses if global_path.poses else []
+    #     waypoints = [np.array([waypoint.pose.position.x, waypoint.pose.position.y]) for waypoint in waypoints]
+    #     waypoints = np.array(waypoints).T
+    #     self.planning_data.global_path = waypoints
+
+    def goal_callback(self, goal: PoseStamped):
+        self.goal = np.array([goal.pose.position.x, goal.pose.position.y])
         self.received_goal = True
-        # self.i = 0
-        self.update_goal_and_check_distance()
+        # print("RECEIVED GOAL")
 
-    # def timer_callback(self, event):
-    #     print("here")
-    #     self.update_goal_and_check_distance()
-
-    def update_goal_and_check_distance(self):
-        self.update_goal_in_current_frame()
-
-        dist = np.sqrt(self.goal_in_current_frame[0] ** 2 + self.goal_in_current_frame[1] ** 2)
-        if dist <= self.pipeline.threshold_distance:
-            cmd_vel = Twist()
-            cmd_vel.linear.x = 0.0
-            cmd_vel.angular.z = 0.0
-
-            if self.received_goal:
-                if self.num_rollouts != 0:
-                    print("Reached Goal")
-                    print("Average Rollout Time: ", self.total_rollout_time / self.num_rollouts)
-                self.total_rollout_time = 0
-                self.num_rollouts = 0
-                self.received_goal = False
-                # self.i = -1
-
-        # print("1", self.goal)
-        # print("2", self.goal_in_current_frame)
-
-    def update_goal_in_current_frame(self):
-        try:
-            (trans, rot) = self.listener.lookupTransform(self.world_frame, self.robot_base_frame, rospy.Time(0))
-        except (
-            tf.LookupException,
-            tf.ConnectivityException,
-            tf.ExtrapolationException,
-        ):
-            print(f"Lookup failed between {self.world_frame} and {self.robot_base_frame}")
-            return
-
-        translated_goal = np.array(self.goal) - np.array(trans[:2])
-
-        transformation_matrix = quaternion_matrix(np.array(rot))
-        # Transpose
-        transformation_matrix = transformation_matrix[:3, :3].T
-        goal = np.zeros((3, 1))
-        goal[:2, 0] = translated_goal
-
-        goal_in_current_frame = transformation_matrix @ goal
-        self.goal_in_current_frame = goal_in_current_frame[:2, 0]
-        # self.goal_in_current_frame = self.goal
-        # print(self.goal_in_current_frame.shape)
-
-    def update_laser_scan(self, laser_scan_message: LaserScan):
+    def _process_laser_scan(self, laser_scan_message: LaserScan):
         max_useful_range = 50
         maximum_points = 1080
         ranges = np.array(laser_scan_message.ranges)
@@ -215,77 +225,84 @@ class ROSInterface:
             constant_values=np.nan,
         )[:maximum_points]
 
-        self.laser_scan = np.stack((padded_ranges, padded_angles), axis=-1)
+        return np.stack((padded_ranges, padded_angles), axis=-1)
 
-    def callback(
+    def point_cloud_and_laser_scan_callback(
         self,
-        odom: Odometry,
         point_cloud_message: PointCloud,
         laser_scan_message: LaserScan,
     ):
-        x, y, theta = odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.orientation.z
-        # print(odom.pose.pose.position.x, odom.pose.pose.position.y)
-        _, _, theta = euler_from_quaternion(
-            [
-                odom.pose.pose.orientation.x,
-                odom.pose.pose.orientation.y,
-                odom.pose.pose.orientation.z,
-                odom.pose.pose.orientation.w,
-            ]
-        )
-        self.odom = np.array([x, y, theta])
-        # TODO: split into vx, vy ?
-        # self.vel = [v, w]
+        point_cloud_array = []
 
-        self.update_laser_scan(laser_scan_message)
+        points = point_cloud_message.points if point_cloud_message.points else []
+        for point in points:
+            point_cloud_array.append([point.x, point.y, 0])
 
-        self.update_pointcloud(point_cloud_message)
+        self.planning_data.point_cloud = np.array(point_cloud_array)
 
-    def update_pointcloud(self, point_cloud_message: PointCloud):
-        pcd_array = []
-        for p in point_cloud_message.points:
-            pcd_array.append([p.x, p.y, p.z])
+        self.planning_data.laser_scan = self._process_laser_scan(laser_scan_message)
 
-        self.point_cloud = np.array(pcd_array)
+    def _process_dynamic_obstacles_from_marker_array(self, dynamic_obstacles: MarkerArray):
+        obstacles_list = []
+        markers = dynamic_obstacles.markers if dynamic_obstacles.markers else []
+        for obstacle in markers:
+            obstacles_list.append([obstacle.pose.position.x, obstacle.pose.position.y, 0, 0])
+        return obstacles_list
 
-    def update_dynamic_obstacles_from_marker_array(self, dynamic_obstacles: MarkerArray):
-        if len(dynamic_obstacles.markers) > 0:
-            obs_array = []
-            for obs in dynamic_obstacles.markers:
-                obs_array.append([obs.pose.position.x, obs.pose.position.y, 0, 0])
+    def _process_dynamic_obstacles_from_agent_states(self, dynamic_obstacles: AgentStates):
+        obstacles_list = []
+        agent_states = dynamic_obstacles.agent_states if dynamic_obstacles.agent_states else []
+        for agent_state in agent_states:
+            obstacles_list.append(
+                [
+                    agent_state.pose.position.x,
+                    agent_state.pose.position.y,
+                    agent_state.twist.linear.x,
+                    agent_state.twist.linear.y,
+                ]
+            )
+        return obstacles_list
 
-        self.update_dynamic_obstacles(obs_array)
+    def _process_dynamic_obstacles_from_tracked_persons(self, dynamic_obstacles: TrackedPersons):
+        obstacles_list = []
+        tracks = dynamic_obstacles.tracks if dynamic_obstacles.tracks else []
+        for t in tracks:
+            obstacles_list.append(
+                [
+                    t.pose.pose.position.x,
+                    t.pose.pose.position.y,
+                    t.twist.twist.linear.x,
+                    t.twist.twist.linear.y,
+                ]
+            )
+        return obstacles_list
 
-    def update_dynamic_obstacles_from_agent_states(self, dynamic_obstacles: AgentStates):
-        if len(dynamic_obstacles.agent_states) > 0:
-            obs_array = []
-            for obs in dynamic_obstacles.agent_states:
-                obs_array.append(
-                    [
-                        obs.pose.position.x,
-                        obs.pose.position.y,
-                        obs.twist.linear.x,
-                        obs.twist.linear.y,
-                    ]
-                )
-        self.update_dynamic_obstacles(obs_array)
-
-    def update_dynamic_obstacles(self, obs_array: list):
-        self.dynamic_obstacles[0:-1] = self.dynamic_obstacles[1:]
-        self.dynamic_obstacles[-1, 0:2, :] = self.pipeline.padding_obstacle
-        self.dynamic_obstacles[-1, 2:, :] = 0
+    def dynamic_obstacle_callback(self, dynamic_obstacle_message: Union[MarkerArray, AgentStates]):
+        if isinstance(dynamic_obstacle_message, MarkerArray):
+            obstacles_list = self._process_dynamic_obstacles_from_marker_array(dynamic_obstacle_message)
+        elif isinstance(dynamic_obstacle_message, AgentStates):
+            obstacles_list = self._process_dynamic_obstacles_from_agent_states(dynamic_obstacle_message)
+        elif isinstance(dynamic_obstacle_message, TrackedPersons):
+            obstacles_list = self._process_dynamic_obstacles_from_tracked_persons(dynamic_obstacle_message)
+        else:
+            raise ValueError(f"Unsupported message type {type(dynamic_obstacle_message)}")
+        self.planning_data.dynamic_obstacles[:-1] = self.planning_data.dynamic_obstacles[1:]
+        self.planning_data.dynamic_obstacles[-1, :2, :] = self.obstacle_padding
+        self.planning_data.dynamic_obstacles[-1, 2:, :] = 0
 
         # get closest dynamic obstacles
-        obs_array = np.array(obs_array)
-        obs_array = obs_array[np.argsort(np.linalg.norm(obs_array[:, :2], axis=-1), axis=-1)][
+        obstacles = np.array(obstacles_list)
+        obstacles = obstacles[np.argsort(np.linalg.norm(obstacles[:, :2], axis=-1), axis=-1)][
             : self.pipeline.max_projection_dynamic_obstacles
         ]
-        obs_array = obs_array.T
+        obstacles = obstacles.T
 
-        self.dynamic_obstacles[-1, :, 0 : obs_array.shape[1]] = obs_array
+        self.planning_data.dynamic_obstacles[-1, :, : obstacles.shape[1]] = obstacles
 
-    def check_dynamic_obstacle_distance_for_stopping(self, threshold_distance: float = 1.0, num_obstacles: int = 1):
-        current_obstacles = self.dynamic_obstacles[-1, :2, :]
+        return self.planning_data.dynamic_obstacles
+
+    def _check_dynamic_obstacle_distance_for_stopping(self, threshold_distance: float = 1.2, num_obstacles: int = 1):
+        current_obstacles = self.planning_data.dynamic_obstacles[-1, :2, :]
 
         if current_obstacles.shape[1] == 0:
             return False
@@ -306,28 +323,35 @@ class ROSInterface:
         return False
 
     def plan(self):
-        self.update_goal_and_check_distance()
-
-        if self.received_goal and not self.check_dynamic_obstacle_distance_for_stopping():
-            cmd_vel = Twist()
-
+        if (
+            not self._reached_goal(self.threshold_distance)
+            and (self.planning_data.sub_goal is not None or not self.use_global_path)
+            and self.received_goal
+        ):
+            # pause_physics_service()
             start_time = time.perf_counter()
 
             coefficients, trajectories, scores = self.pipeline.run(
-                np.array(self.goal_in_current_frame, dtype=np.float32),
-                np.array(self.vel, dtype=np.float32),
-                np.array(self.acc, dtype=np.float32),
-                np.array(self.laser_scan, dtype=np.float32),
-                np.array(self.point_cloud, dtype=np.float32),
-                np.array(self.dynamic_obstacles, dtype=np.float32),
+                goal=self.planning_data.goal if self.planning_data.sub_goal is None else self.planning_data.sub_goal,
+                ego_velocity=self.planning_data.velocity,
+                ego_acceleration=self.planning_data.acceleration,
+                point_cloud=self.planning_data.point_cloud,
+                laser_scan=self.planning_data.laser_scan,
+                # occupancy_map=processing_functions.generate_occupancy_map_from_point_cloud(
+                #     self.planning_data.point_cloud
+                # ),
+                # downsampled_point_cloud=processing_functions.downsample_point_cloud(
+                #     self.planning_data.point_cloud, max_downsampled_points=self.max_static_obstacles, padding_value=None
+                # ).T,
+                dynamic_obstacles_n_steps=self.planning_data.dynamic_obstacles,
             )
 
             self.total_rollout_time = time.perf_counter() - start_time
             self.num_rollouts += 1
+
             best_index = np.argmax(scores)
             best_coeffs = coefficients[best_index]
             x_best, y_best = best_coeffs[:, 0], best_coeffs[:, 1]
-            # print(x_best.shape)
 
             best_traj = trajectories[best_index]
             self.publish_path_message(best_traj)
@@ -335,67 +359,55 @@ class ROSInterface:
             vx_control, vy_control, ax_control, ay_control, norm_v_t, angle_v_t = self.compute_controls(
                 x_best * 0.8, y_best * 0.8
             )
-            # vx_control, vy_control, norm_v_t, angle_v_t = self.compute_controls(x_best, y_best)
 
-            self.vel = [vx_control, vy_control]
-            self.acc = [ax_control, ay_control]
+            self.planning_data.velocity = np.array((vx_control, vy_control), dtype=np.float32)
+            self.planning_data.acceleration = np.array((ax_control, ay_control), dtype=np.float32)
 
-            # zeta = self.convert_angle(self.theta_init) - self.convert_angle(angle_v_t)
+            # zeta = self.convert_angle(self.planning_data.odometry[2]) - self.convert_angle(angle_v_t)
             zeta = self.convert_angle(0) - self.convert_angle(angle_v_t)
             v_t_control = norm_v_t * np.cos(zeta)
-            # print("zeta", zeta)
+            # v_t_control = max((min(v_t_control, 0.8), -0.8))
 
-            omega_control = -zeta / (self.num_sample * 5 * 0.01)
+            omega_control = -zeta / (self.num_control_samples * self.time_horizon * 0.01)
+            # omega_control = max(min(omega_control.item(), 10), -10)
 
-            # self.vx_init = vx_control
-            # self.vy_init = vy_control
+            cmd_vel = Twist()
 
-            # self.ax_init = ax_control
-            # self.ay_init = ay_control
+            if self._check_dynamic_obstacle_distance_for_stopping():
+                cmd_vel.linear.x = 0
+                cmd_vel.angular.z = omega_control * 1.5
+            else:
+                cmd_vel.linear.x = v_t_control
+                cmd_vel.angular.z = omega_control
 
-            cmd_vel.linear.x = v_t_control
-            cmd_vel.angular.z = omega_control
-
-            # print("Control", v_t_control, omega_control)
-            self.pub_vel.publish(cmd_vel)
-
+            print("Control", v_t_control, omega_control)
+            self.velocity_publisher.publish(cmd_vel)
         else:
-            self.publish_zero_vel()
-
-        # # if self.i <= 3:
-        # cmd_vel.linear.x = 0.0
-        # cmd_vel.angular.z = 0.0
-        # #     self.cmd_vel_pub.publish(cmd_vel)
-        # #     self.i += 1
-
-        # # else:
-
-        # print(v_t_control, omega_control)
-        # rospy.sleep(0.005)
+            self.publish_zero_velocity()
 
     def convert_angle(self, angle):
-        angle = np.unwrap(np.array([angle]), discont=np.pi, axis=0, period=6.283185307179586)
+        angle = np.unwrap(np.array([angle]), discont=np.pi, axis=0, period=2 * np.pi)
 
-        return angle
+        return angle.item()
 
     def compute_controls(self, x_best, y_best):
         xdot_best = np.dot(
-            self.Pdot,
+            self.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL,
             x_best,
         )
         ydot_best = np.dot(
-            self.Pdot,
+            self.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL,
             y_best,
         )
 
-        xddot_best = np.dot(self.Pddot, x_best)
-        yddot_best = np.dot(self.Pddot, y_best)
+        xddot_best = np.dot(self.BERNSTEIN_POLYNOMIALS_SECOND_DIFFERENTIAL, x_best)
+        yddot_best = np.dot(self.BERNSTEIN_POLYNOMIALS_SECOND_DIFFERENTIAL, y_best)
 
-        vx_control = np.mean(xdot_best[0 : self.num_sample])
-        vy_control = np.mean(ydot_best[0 : self.num_sample])
+        vx_control = np.mean(xdot_best[: self.num_control_samples])
+        vy_control = np.mean(ydot_best[: self.num_control_samples])
 
-        ax_control = np.mean(xddot_best[0 : self.num_sample])
-        ay_control = np.mean(yddot_best[0 : self.num_sample])
+        ax_control = np.mean(xddot_best[: self.num_control_samples])
+        ay_control = np.mean(yddot_best[: self.num_control_samples])
 
         norm_v_t = np.sqrt(vx_control**2 + vy_control**2)
         angle_v_t = np.arctan2(vy_control, vx_control)
@@ -413,18 +425,13 @@ class ROSInterface:
             pose = PoseStamped()
             pose.pose.position.x = p[0]
             pose.pose.position.y = p[1]
-            # pose.pose.position.z = 0
-            path.poses.append(pose)
+            path.poses.append(pose)  # type: ignore
 
-        self.pub_path.publish(path)
+        self.path_publisher.publish(path)
 
-    def publish_zero_vel(self):
-        cmd_vel = Twist()
-        cmd_vel.linear.x = 0.0
-        cmd_vel.angular.z = 0.0
-
-        for i in range(5):
-            self.pub_vel.publish()
+    def publish_zero_velocity(self):
+        for _ in range(5):
+            self.velocity_publisher.publish()
 
 
 @initialize_configuration
@@ -436,15 +443,16 @@ def main(configuration: Configuration) -> None:
 
         interface = ROSInterface(configuration)
         rate = rospy.Rate(10)
-        rospy.on_shutdown(interface.publish_zero_vel)
+        rospy.on_shutdown(interface.publish_zero_velocity)
 
         while not rospy.is_shutdown():
             interface.plan()
             rate.sleep()
-
     else:
         raise ValueError(f"Mode {configuration.mode} not supported for live inference.")
 
 
 if __name__ == "__main__":
+    pause_physics_service = rospy.ServiceProxy("/gazebo/pause_physics", EmptyService)
+    unpause_physics_service = rospy.ServiceProxy("/gazebo/unpause_physics", EmptyService)
     main()

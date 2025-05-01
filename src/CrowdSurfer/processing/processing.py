@@ -21,9 +21,15 @@ class Dataset:
         self,
         name: str,
         directory: str,
-        topic_to_function_mapping: Dict[str, Callable[[Message], Dict[str, np.ndarray]]],
-        post_processing_functions: List[Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]] = [],
-        editing_post_processing_functions: List[Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]] = [],
+        topic_to_function_mapping: Dict[
+            str, Callable[[Message], Dict[str, np.ndarray]]
+        ],
+        post_processing_functions: List[
+            Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]
+        ] = [],
+        editing_post_processing_functions: List[
+            Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]
+        ] = [],
         nested: bool = False,
     ):
         self.name = name
@@ -33,7 +39,11 @@ class Dataset:
         self.editing_post_processing_functions = editing_post_processing_functions
         self.nested = nested
 
-        self.topics = [topic for topic in self.topic_to_function_mapping.keys() if topic is not None]
+        self.topics = [
+            topic
+            for topic in self.topic_to_function_mapping.keys()
+            if topic is not None
+        ]
 
         self.processed_directory = os.path.join(self.directory, "processed")
         if not os.path.exists(self.processed_directory):
@@ -50,16 +60,20 @@ class Dataset:
             raise ValueError("No topics to process")
 
         topics_in_bag = bag.get_type_and_topic_info().topics.keys()
-        assert all(
-            topic in topics_in_bag for topic in self.topics
-        ), f"Topics not found in bag: {self.topics - topics_in_bag}"
+        assert all(topic in topics_in_bag for topic in self.topics), (
+            f"Topics not found in bag: {self.topics - topics_in_bag}"
+        )
 
-        messages: Generator[Tuple[str, Message, Time], None, None] = bag.read_messages(topics=self.topics)
+        messages: Generator[Tuple[str, Message, Time], None, None] = bag.read_messages(
+            topics=self.topics
+        )
 
         data_array_mapping: Dict[str, List[np.ndarray]] = {ExtraDataKeys.TIMESTAMP: []}
 
         # Sync messages
-        current_data_mapping: Dict[str, Dict[str, np.ndarray]] = {topic: None for topic in self.topics}
+        current_data_mapping: Dict[str, Dict[str, np.ndarray]] = {
+            topic: None for topic in self.topics
+        }
         current_time = cast(float, bag.get_start_time())
 
         for topic, message, time in messages:
@@ -68,21 +82,28 @@ class Dataset:
             current_data_mapping[topic] = message
 
             if (time.to_sec() - current_time) >= (1.0 / sample_rate):
-                if all(current_data_mapping[topic] is not None for topic in self.topics):
+                if all(
+                    current_data_mapping[topic] is not None for topic in self.topics
+                ):
                     data_array_mapping[ExtraDataKeys.TIMESTAMP].append(current_time)
                     for topic in self.topics:
                         # Splitting the Dynamic Obstacle Position and Body Pose from obstacle_metadata_function(dynamic_obstacle_topic)
-                        processed_data = self.topic_to_function_mapping[topic](current_data_mapping[topic])
+                        processed_data = self.topic_to_function_mapping[topic](
+                            current_data_mapping[topic]
+                        )
 
                         for data_type in processed_data.keys():
                             if data_type not in data_array_mapping:
                                 data_array_mapping[data_type] = []
-                            data_array_mapping[data_type].append(processed_data[data_type])
+                            data_array_mapping[data_type].append(
+                                processed_data[data_type]
+                            )
 
                 current_time = time.to_sec()
 
         output_array_mapping = {
-            data_type: np.array(data_array_mapping[data_type]) for data_type in data_array_mapping.keys()
+            data_type: np.array(data_array_mapping[data_type])
+            for data_type in data_array_mapping.keys()
         }
 
         data_length = len(data_array_mapping[list(output_array_mapping.keys())[0]])
@@ -148,7 +169,9 @@ class Dataset:
             add_to_index = 0
 
         bag_names = [
-            bag_name for bag_name in bag_names if bag_name not in processed_bag_names and bag_name.endswith(".bag")
+            bag_name
+            for bag_name in bag_names
+            if bag_name not in processed_bag_names and bag_name.endswith(".bag")
         ]
 
         progress_bar = tqdm(
@@ -214,7 +237,9 @@ class Dataset:
         )
 
         for processed_bag_name in processed_bag_names:
-            processed_bag_path = os.path.join(self.processed_directory, processed_bag_name)
+            processed_bag_path = os.path.join(
+                self.processed_directory, processed_bag_name
+            )
             if not os.path.isdir(processed_bag_path):
                 progress_bar.total -= 1
                 continue
@@ -223,15 +248,20 @@ class Dataset:
 
             array_names = os.listdir(processed_bag_path)
             data_map = {
-                array_name[:-4]: np.load(os.path.join(processed_bag_path, array_name)) for array_name in array_names
+                array_name[:-4]: np.load(os.path.join(processed_bag_path, array_name))
+                for array_name in array_names
             }
 
-            for editing_post_processing_function in self.editing_post_processing_functions:
+            for (
+                editing_post_processing_function
+            ) in self.editing_post_processing_functions:
                 data_map = editing_post_processing_function(data_map)
 
             self.save_arrays(data_map, processed_bag_name)
 
-            self.edit_index_data_length(processed_bag_name, len(data_map[ExtraDataKeys.TIMESTAMP]))
+            self.edit_index_data_length(
+                processed_bag_name, len(data_map[ExtraDataKeys.TIMESTAMP])
+            )
 
             progress_bar.update(1)
 
@@ -312,31 +342,38 @@ def process_custom_bags(
 
     priest_planner = PriestPlanner(
         num_dynamic_obstacles=10,
-        num_obstacles=1950,
-        t_fin=trajectory_total_time,
-        num=trajectory_timesteps,
+        num_static_obstacles=1950,
+        time_horizon=trajectory_total_time,
+        trajectory_length=trajectory_timesteps,
         num_waypoints=goal_increment + 1,
-        weight_track=weight_track,
-        weight_smoothness=weight_smoothness,
+        tracking_weight=weight_track,
+        smoothness_weight=weight_smoothness,
     )
 
     expert_priest_planner = PriestPlanner(
         num_dynamic_obstacles=10,
-        num_obstacles=1950,
-        t_fin=trajectory_total_time,
-        num=trajectory_timesteps,
+        num_static_obstacles=1950,
+        time_horizon=trajectory_total_time,
+        trajectory_length=trajectory_timesteps,
         num_waypoints=goal_increment + 1,
-        weight_track=2.0,
-        weight_smoothness=weight_smoothness,
-        max_iter_cem=6,
+        tracking_weight=2.0,
+        smoothness_weight=weight_smoothness,
+        max_outer_iterations=6,
     )
+
     dataset = Dataset(
         name="custom",
         directory=directory,
         topic_to_function_mapping={
             "/odom": message_reading_functions.process_odometry_message,
-            "/scan": partial(message_reading_functions.process_laser_scan_message, maximum_points=1950),
-            "/marker": partial(message_reading_functions.process_pedestrian_pose_message, max_obstacles=50),
+            "/scan": partial(
+                message_reading_functions.process_laser_scan_message,
+                maximum_points=1950,
+            ),
+            "/marker": partial(
+                message_reading_functions.process_pedestrian_pose_message,
+                max_obstacles=50,
+            ),
         },
         post_processing_functions=[
             processing_functions.replace_odometry_heading_with_calculated_heading,
@@ -346,16 +383,24 @@ def process_custom_bags(
                 goal_increment=goal_increment,
             ),
             processing_functions.create_obstacle_velocities_from_positions,
-            partial(processing_functions.convert_laser_scan_to_point_cloud, maximum_points=1950),
+            partial(
+                processing_functions.convert_laser_scan_to_point_cloud,
+                maximum_points=1950,
+            ),
             processing_functions.create_occupancy_map_from_point_cloud,
             partial(
                 processing_functions.create_priest_trajectories_from_observations,
                 planner=priest_planner,
             ),
-            partial(processing_functions.delete_from_data, key=ExtraDataKeys.LASER_SCAN),
+            partial(
+                processing_functions.delete_from_data, key=ExtraDataKeys.LASER_SCAN
+            ),
         ],
         editing_post_processing_functions=[
-            partial(processing_functions.expert_trajectory_to_bernstein_priest, planner=expert_priest_planner),
+            partial(
+                processing_functions.expert_trajectory_to_bernstein_priest,
+                planner=expert_priest_planner,
+            ),
             processing_functions.downsample_point_cloud,
             processing_functions.create_ray_traced_occupancy_map_from_point_cloud,
         ],

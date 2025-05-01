@@ -193,7 +193,7 @@ def create_animation(
         )
 
     def update(frame):
-        title.set_text(f"PRIEST Plot for {filename} (Timestep {frame+1}/{num_timesteps})")
+        title.set_text(f"PRIEST Plot for {filename} (Timestep {frame + 1}/{num_timesteps})")
 
         for i, line in enumerate(trajectory_lines):
             traj = np.stack((x_elite[frame, i], y_elite[frame, i]), axis=-1)
@@ -276,10 +276,10 @@ trajectory_data = read_npz_files(npz_directory)
 
 pg = initialize_projection_guidance()
 planner = PriestPlanner(
-    t_fin=3,
-    num=30,
+    time_horizon=3,
+    trajectory_length=30,
     num_waypoints=31,
-    weight_track=1.2,
+    tracking_weight=1.2,
 )
 
 for data in tqdm(trajectory_data, desc="Generating PRIEST animations"):

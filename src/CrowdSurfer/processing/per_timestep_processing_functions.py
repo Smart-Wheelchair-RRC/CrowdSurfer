@@ -3,9 +3,10 @@ Processing Functions for a single timestep
 When creating processing functions, separate into per timestep functions where possible before importing into the main processing function.
 """
 
-from typing import Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
+import open3d
 
 from .utils import bresenham_ray_tracing
 
@@ -15,15 +16,19 @@ def generate_ray_traced_occupancy_map_from_point_cloud(
     max_distance: float = 5,
     resolution: float = 0.05,
 ) -> np.ndarray:
-    point_cloud_valid = point_cloud[~np.isnan(point_cloud).any(axis=1)]
-
     grid_size = int(2 * max_distance / resolution)
 
     center_x, center_y = grid_size // 2, grid_size // 2
 
     occupancy_map = np.ones((grid_size, grid_size)) / 2
 
-    def is_valid(cell: np.ndarray, grid_size: int):
+    if point_cloud.shape[0] == 0 or point_cloud.shape[1] == 0:
+        return occupancy_map
+
+    point_cloud = point_cloud[:, :2]
+    point_cloud_valid = point_cloud[~np.isnan(point_cloud).any(axis=1)]
+
+    def is_valid(cell: Union[np.ndarray, Tuple[float, float]], grid_size: int):
         if cell[0] < grid_size and cell[0] >= 0 and cell[1] < grid_size and cell[1] >= 0:
             return True
         return False
@@ -66,7 +71,7 @@ def downsample_point_cloud(
     point_cloud: np.ndarray,
     max_downsampled_points: int = 100,
     downsampling_voxel_size: float = 0.16,
-    padding_value: float = np.nan,
+    padding_value: Optional[float] = np.nan,
 ) -> np.ndarray:
     """
     Downsample a point cloud by voxelizing it and taking the first `max_downsampled_points` points or padding it.
@@ -79,8 +84,10 @@ def downsample_point_cloud(
     Returns:
         The downsampled point cloud with shape (max_downsampled_points, 2).
     """
+    out_pcd = np.full((max_downsampled_points, 2), padding_value)
 
-    import open3d
+    if point_cloud.shape[0] == 0 or point_cloud.shape[1] == 0:
+        return out_pcd if padding_value is not None else np.full((0, 2), 1000)
 
     if point_cloud.shape[1] == 2:
         point_cloud = np.concatenate([point_cloud, np.zeros((point_cloud.shape[0], 1))], axis=1)
@@ -94,10 +101,11 @@ def downsample_point_cloud(
         :max_downsampled_points
     ]  # shape: (<=max_downsampled_points, 2)
 
-    out_pcd = np.full((max_downsampled_points, 2), padding_value)
-    out_pcd[: current_pcd.shape[0], :] = current_pcd[:max_downsampled_points]
-
-    return out_pcd
+    if padding_value is not None:
+        out_pcd[: current_pcd.shape[0], :] = current_pcd[:max_downsampled_points]
+        return out_pcd
+    else:
+        return current_pcd
 
 
 def generate_occupancy_map_from_point_cloud(
@@ -116,9 +124,15 @@ def generate_occupancy_map_from_point_cloud(
     Returns:
         The occupancy map with shape (map_size[0], map_size[1]).
     """
+
     map_height, map_width = map_size
 
     origin = (map_width * resolution / 2, map_height * resolution / 2)
+
+    occupancy_map = np.zeros(map_size, dtype=np.int8)
+
+    if point_cloud.shape[0] == 0 or point_cloud.shape[1] == 0:
+        return occupancy_map
 
     # Polar to Cartesian coordinates transformation
     x = point_cloud[:, 0]
@@ -131,8 +145,6 @@ def generate_occupancy_map_from_point_cloud(
     valid_points = (map_x >= 0) & (map_x < map_width) & (map_y >= 0) & (map_y < map_height)
     map_x = map_x[valid_points]
     map_y = map_y[valid_points]
-
-    occupancy_map = np.zeros(map_size, dtype=np.int8)
 
     if len(map_x) > 0:
         occupancy_map[map_y, map_x] = 100  # Occupied

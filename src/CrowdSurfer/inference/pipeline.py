@@ -16,7 +16,7 @@ from navigation.utilities import project_coefficients
 @dataclass
 class InferenceData:
     """
-    Dataclass to hold the input data for the pipeline.
+    Dataclass to hold the input data for the pipeline. All data is in Ego frame.
 
     Attributes:
         static_obstacles: Tensor of shape (batch_size, 1, height, width) or (batch_size, 2, max_points)
@@ -45,15 +45,23 @@ class InferenceData:
 
     def __post_init__(self):
         if self.ego_acceleration_for_projection is None:
-            self.ego_acceleration_for_projection = torch.zeros_like(self.ego_velocity_for_projection)
+            self.ego_acceleration_for_projection = torch.zeros_like(
+                self.ego_velocity_for_projection
+            )
 
 
 class Pipeline:
     def __init__(self, configuration: configuration.Configuration):
         self.guidance_type = configuration.projection.guidance_type
-        self.max_projection_dynamic_obstacles = configuration.projection.max_dynamic_obstacles
-        self.max_projection_static_obstacles = configuration.projection.max_static_obstacles
-        self.use_obstacle_constraints_for_guidance = configuration.projection.use_obstacle_constraints
+        self.max_projection_dynamic_obstacles = (
+            configuration.projection.max_dynamic_obstacles
+        )
+        self.max_projection_static_obstacles = (
+            configuration.projection.max_static_obstacles
+        )
+        self.use_obstacle_constraints_for_guidance = (
+            configuration.projection.use_obstacle_constraints
+        )
         self.num_samples = configuration.scoring_network.num_samples
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -67,9 +75,6 @@ class Pipeline:
             vqvae_hidden_channels=configuration.vqvae.hidden_channels,
             observation_embedding_dim=configuration.pixelcnn.observation_embedding_dim,
             static_obstacle_type=configuration.dataset.static_obstacle_type,
-        ).to(self.device)
-        self.scoring_network = ScoringNetwork(
-            obstacle_embedding_dim=configuration.pixelcnn.observation_embedding_dim,
         ).to(self.device)
 
         assert configuration.vqvae.checkpoint_path is not None
@@ -85,14 +90,17 @@ class Pipeline:
             self.scoring_network = ScoringNetwork(
                 obstacle_embedding_dim=configuration.pixelcnn.observation_embedding_dim,
             ).to(self.device)
-            load_checkpoint_in_model(self.scoring_network, configuration.scoring_network.checkpoint_path)
+            load_checkpoint_in_model(
+                self.scoring_network, configuration.scoring_network.checkpoint_path
+            )
             self.scoring_network.eval()
         else:
             self.scoring_network = None
 
         self.projection_guidance = ProjectionGuidance(
             num_obstacles=(
-                self.max_projection_dynamic_obstacles + self.max_projection_static_obstacles
+                self.max_projection_dynamic_obstacles
+                + self.max_projection_static_obstacles
                 if self.use_obstacle_constraints_for_guidance
                 else 0
             ),
@@ -109,21 +117,23 @@ class Pipeline:
 
             self.priest_planner = PriestPlanner(
                 num_dynamic_obstacles=self.max_projection_dynamic_obstacles,
-                num_obstacles=self.max_projection_static_obstacles,
-                t_fin=configuration.dataset.trajectory_time,
-                num=configuration.dataset.trajectory_length,
-                weight_track=1.0,
+                num_static_obstacles=self.max_projection_static_obstacles,
+                time_horizon=configuration.dataset.trajectory_time,
+                trajectory_length=configuration.dataset.trajectory_length,
+                tracking_weight=1.0,
                 # weight_smoothness=0.8,
-                a_obs_1=0.8,
-                b_obs_1=0.8,
-                a_obs_2=0.8,
-                b_obs_2=0.8,
+                static_obstacle_semi_minor_axis=0.8,
+                static_obstacle_semi_major_axis=0.8,
+                dynamic_obstacle_semi_minor_axis=0.8,
+                dynamic_obstacle_semi_major_axis=0.8,
                 num_waypoints=configuration.dataset.trajectory_length,
-                num_batch=self.num_samples,
-                max_iter_cem=configuration.projection.num_priest_iterations,
+                trajectory_batch_size=self.num_samples,
+                max_outer_iterations=configuration.projection.num_priest_iterations,
             )
 
-    def _get_probability_distribution_and_embedding_from_pixelcnn(self, data: InferenceData) -> Tuple[Tensor, Tensor]:
+    def _get_probability_distribution_and_embedding_from_pixelcnn(
+        self, data: InferenceData
+    ) -> Tuple[Tensor, Tensor]:
         with torch.no_grad():
             pixelcnn_output, observation_embedding = self.pixelcnn.forward(
                 static_obstacles=data.static_obstacles,
@@ -154,22 +164,40 @@ class Pipeline:
 
         return output_coefficients  # shape: (batch_size * num_samples, 2, 11)
 
-    def _run_projection_guidance(self, coefficients: Tensor, data: InferenceData) -> Tensor:
+    def _run_projection_guidance(
+        self, coefficients: Tensor, data: InferenceData
+    ) -> Tensor:
         return project_coefficients(
             projection_guidance=self.projection_guidance,
             coefficients=coefficients,
-            initial_ego_position_x=torch.zeros_like(data.ego_velocity_for_projection[:, 0])
+            initial_ego_position_x=torch.zeros_like(
+                data.ego_velocity_for_projection[:, 0]
+            )
             .to(self.device)
             .tile(self.num_samples),
-            initial_ego_position_y=torch.zeros_like(data.ego_velocity_for_projection[:, 1])
+            initial_ego_position_y=torch.zeros_like(
+                data.ego_velocity_for_projection[:, 1]
+            )
             .to(self.device)
             .tile(self.num_samples),
-            initial_ego_velocity_x=data.ego_velocity_for_projection[:, 0].tile(self.num_samples),
-            initial_ego_velocity_y=data.ego_velocity_for_projection[:, 1].tile(self.num_samples),
-            initial_ego_acceleration_x=data.ego_acceleration_for_projection[:, 0].tile(self.num_samples),
-            initial_ego_acceleration_y=data.ego_acceleration_for_projection[:, 1].tile(self.num_samples),
-            final_ego_position_x=data.goal_position_for_projection[:, 0].tile(self.num_samples),
-            final_ego_position_y=data.goal_position_for_projection[:, 1].tile(self.num_samples),
+            initial_ego_velocity_x=data.ego_velocity_for_projection[:, 0].tile(
+                self.num_samples
+            ),
+            initial_ego_velocity_y=data.ego_velocity_for_projection[:, 1].tile(
+                self.num_samples
+            ),
+            initial_ego_acceleration_x=data.ego_acceleration_for_projection[:, 0].tile(
+                self.num_samples
+            ),
+            initial_ego_acceleration_y=data.ego_acceleration_for_projection[:, 1].tile(
+                self.num_samples
+            ),
+            final_ego_position_x=data.goal_position_for_projection[:, 0].tile(
+                self.num_samples
+            ),
+            final_ego_position_y=data.goal_position_for_projection[:, 1].tile(
+                self.num_samples
+            ),
             obstacle_positions_x=(
                 data.obstacle_positions_for_projection[:, 0].tile(self.num_samples, 1)
                 if self.use_obstacle_constraints_for_guidance
@@ -195,64 +223,73 @@ class Pipeline:
     def _run_priest(self, coefficients: Tensor, data: InferenceData) -> Tensor:
         assert coefficients.shape[0] == self.num_samples
 
-        self.priest_planner.x_init = 0
-        self.priest_planner.y_init = 0
-        self.priest_planner.theta_init = 0
+        obstacle_positions = data.obstacle_positions_for_projection[0].cpu().numpy()
 
-        self.priest_planner.vx_init = data.ego_velocity_for_projection[0, 0].cpu().numpy().item()
-        self.priest_planner.vy_init = data.ego_velocity_for_projection[0, 1].cpu().numpy().item()
+        obstacle_velocities = (
+            data.obstacle_velocities_for_projection[
+                0, :, : self.max_projection_dynamic_obstacles
+            ]
+            .cpu()
+            .numpy()
+        )
 
-        self.priest_planner.ax_init = data.ego_acceleration_for_projection[0, 0].cpu().numpy().item()
-        self.priest_planner.ay_init = data.ego_acceleration_for_projection[0, 1].cpu().numpy().item()
-
-        # Setting PRIEST goal as the final odometry positions of the current rosbag
-        self.priest_planner.x_fin = data.goal_position_for_projection[0, 0].cpu().numpy().item()
-        self.priest_planner.y_fin = data.goal_position_for_projection[0, 1].cpu().numpy().item()
-
-        if self.use_obstacle_constraints_for_guidance:
-            self.priest_planner.update_obstacle_pointcloud(
-                np.column_stack(
-                    (
-                        data.obstacle_positions_for_projection[0, 0, self.max_projection_dynamic_obstacles :]
-                        .cpu()
-                        .numpy(),
-                        data.obstacle_positions_for_projection[0, 1, self.max_projection_dynamic_obstacles :]
-                        .cpu()
-                        .numpy(),
-                        np.zeros_like(
-                            data.obstacle_positions_for_projection[0, 0, self.max_projection_dynamic_obstacles :]
-                            .cpu()
-                            .numpy()
-                        ),
-                    )
-                )
+        _, _, _, _, c_x_elite, c_y_elite, _, _, idx_min = (
+            self.priest_planner.run_optimization(
+                initial_x_position=0.0,
+                initial_y_position=0.0,
+                initial_x_velocity=data.ego_velocity_for_projection[0, 0]
+                .cpu()
+                .numpy()
+                .item(),
+                initial_y_velocity=data.ego_velocity_for_projection[0, 1]
+                .cpu()
+                .numpy()
+                .item(),
+                initial_x_acceleration=data.ego_acceleration_for_projection[0, 0]
+                .cpu()
+                .numpy()
+                .item(),
+                initial_y_acceleration=data.ego_acceleration_for_projection[0, 1]
+                .cpu()
+                .numpy()
+                .item(),
+                goal_x_position=data.goal_position_for_projection[0, 0]
+                .cpu()
+                .numpy()
+                .item(),
+                goal_y_position=data.goal_position_for_projection[0, 1]
+                .cpu()
+                .numpy()
+                .item(),
+                dynamic_obstacle_x_positions=obstacle_positions[
+                    0, : self.max_projection_dynamic_obstacles
+                ]
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                dynamic_obstacle_y_positions=obstacle_positions[
+                    1, : self.max_projection_dynamic_obstacles
+                ]
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                dynamic_obstacle_x_velocities=obstacle_velocities[0]
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                dynamic_obstacle_y_velocities=obstacle_velocities[1]
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                static_obstacle_x_positions=obstacle_positions[
+                    0, self.max_projection_dynamic_obstacles :
+                ]
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                static_obstacle_y_positions=obstacle_positions[
+                    1, self.max_projection_dynamic_obstacles :
+                ]
+                if self.use_obstacle_constraints_for_guidance
+                else None,
+                custom_x_coefficients=coefficients[:, 0, :].cpu().numpy(),
+                custom_y_coefficients=coefficients[:, 1, :].cpu().numpy(),
             )
-
-        # Padding for redundant obstacles
-        self.priest_planner.x_obs_init_dy.fill(1000.0)
-        self.priest_planner.y_obs_init_dy.fill(1000.0)
-        self.priest_planner.vx_obs_dy.fill(0.0)
-        self.priest_planner.vy_obs_dy.fill(0.0)
-
-        if self.use_obstacle_constraints_for_guidance:
-            self.priest_planner.x_obs_init_dy = (
-                data.obstacle_positions_for_projection[0, 0, : self.max_projection_dynamic_obstacles].cpu().numpy()
-            )
-            self.priest_planner.y_obs_init_dy = (
-                data.obstacle_positions_for_projection[0, 1, : self.max_projection_dynamic_obstacles].cpu().numpy()
-            )
-            self.priest_planner.vx_obs_dy = (
-                data.obstacle_velocities_for_projection[0, 0, : self.max_projection_dynamic_obstacles].cpu().numpy()
-            )
-            self.priest_planner.vx_obs_dy = (
-                data.obstacle_velocities_for_projection[0, 1, : self.max_projection_dynamic_obstacles].cpu().numpy()
-            )
-
-        _, _, _, _, c_x_elite, c_y_elite, _, _, idx_min = self.priest_planner.run_optimization(
-            # custom_x_waypoint=pixelcnn_trajectory_x.detach().cpu().numpy(),
-            # custom_y_waypoint=pixelcnn_trajectory_y.detach().cpu().numpy(),
-            custom_x_coefficient=coefficients[:, 0, :].cpu().numpy(),
-            custom_y_coefficient=coefficients[:, 1, :].cpu().numpy(),
         )
 
         return (
@@ -260,7 +297,7 @@ class Pipeline:
                 (torch.tensor(np.array(c_x_elite)), torch.tensor(np.array(c_y_elite))),
                 dim=1,
             ).to(self.device),  # shape: (batch_size * num_samples, 2, 11)
-            idx_min,
+            int(idx_min),
         )
 
     def _run_pipeline(self, data: InferenceData) -> Tuple[Tensor, Tensor, Tensor]:
@@ -274,8 +311,10 @@ class Pipeline:
         elif self.guidance_type is GuidanceType.PRIEST:
             coefficients, idx_min = self._run_priest(coefficients, data)
 
-        trajectory_x, trajectory_y = self.projection_guidance.coefficients_to_trajectory(
-            coefficients[:, 0, :], coefficients[:, 1, :], position_only=True
+        trajectory_x, trajectory_y = (
+            self.projection_guidance.coefficients_to_trajectory(
+                coefficients[:, 0, :], coefficients[:, 1, :], position_only=True
+            )
         )
         trajectory = torch.stack((trajectory_x, trajectory_y), dim=1)
 
@@ -292,6 +331,8 @@ class Pipeline:
 
         return (
             coefficients.transpose(-1, -2).cpu(),  # shape: (num_samples, 11, 2)
-            trajectory.transpose(-1, -2).cpu(),  # shape: (num_samples, trajectory_time_steps, 2)
+            trajectory.transpose(
+                -1, -2
+            ).cpu(),  # shape: (num_samples, trajectory_time_steps, 2)
             scores.cpu(),  # shape: (num_samples)
         )

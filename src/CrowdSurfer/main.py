@@ -25,7 +25,11 @@ def main(configuration: Configuration) -> None:
         if configuration.scoring_network.checkpoint_path is not None:
             trainer.load_checkpoint(configuration.scoring_network.checkpoint_path)
 
-    if configuration.mode in {Mode.TRAIN_VQVAE, Mode.TRAIN_PIXELCNN, Mode.TRAIN_SCORING_NETWORK}:
+    if configuration.mode in {
+        Mode.TRAIN_VQVAE,
+        Mode.TRAIN_PIXELCNN,
+        Mode.TRAIN_SCORING_NETWORK,
+    }:
         trainer.train(
             num_epochs=configuration.trainer.num_epochs,
             epochs_per_save=configuration.trainer.epochs_per_save,
@@ -34,7 +38,12 @@ def main(configuration: Configuration) -> None:
     elif configuration.mode in {Mode.INFERENCE_VQVAE, Mode.INFERENCE_PIXELCNN}:
         assert type(trainer) is VQVAETrainer or type(trainer) is PixelCNNTrainer
         for index in range(0, len(trainer.dataset), 150):
-            trainer.inference(dataset_index=index, num_samples=50, save_plot_image=True, show_plot=False)
+            trainer.inference(
+                dataset_index=index,
+                num_samples=50,
+                save_plot_image=True,
+                show_plot=False,
+            )
     elif configuration.mode is Mode.INFERENCE_COMPLETE:
         pipeline = InferencePipeline(configuration)
         pipeline.run_all(plot=True, save_arrays=False)
