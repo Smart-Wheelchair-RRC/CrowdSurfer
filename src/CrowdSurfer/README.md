@@ -6,7 +6,7 @@
 
 \* denotes equal contribution
 
-Accepted at IEEE International Conference on Robotics and Automation (ICRA) 2025
+Accepted at **IEEE International Conference on Robotics and Automation (ICRA) 2025**
 
 [Paper](https://arxiv.org/abs/2409.16011) | [Video](https://youtu.be/BMDCYdxfaXM) | [Website](https://smart-wheelchair-rrc.github.io/CrowdSurfer-webpage/)
 
@@ -21,86 +21,90 @@ Navigation amongst densely packed crowds remains a challenge for mobile robots. 
 This repository contains the code for the paper "CrowdSurfer: Sampling Optimization Augmented with Vector-Quantized Variational AutoEncoder for Dense Crowd Navigation".
 
 All configuration is done via [this configuration file](./src/CrowdSurfer/configuration/configuration.yaml).
-To run once setup, use this [script](./src/CrowdSurfer/run_CrowdSurfer.sh) to run the code in a tmux session.
 
-## Installation
+## Installation (Prerequisites - ROS1 Noetic, Miniconda, Cuda 11.8)
 
-Setup your conda environment called "crowdsurfer" with the following packages:
+```
+conda create -n crowdsurfer python=3.8 -y
+conda activate crowdsurfer
+```
 
--   CUDA 12.1
--   PyTorch
--   JAX
--   Hydra
--   HuggingFace Accelerate
--   Open3D
--   Scikit Learn
+### Install the repo dependencies (tested with Cuda 11.8)
+```
+pip install open3d
+pip install jax==0.2.20 jaxlib==0.3.2+cuda11.cudnn82 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+pip install pycryptodomex
+pip install gnupg
+pip install rospkg
+pip install networkx==3.1
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install hydra-core
+pip install accelerate
+```
 
-Running the simulation in gazebo requires pedsim_ros (to simulate the humans).
-To install pedsim_ros and its other dependencies, proceed as follows:
+### Setting up the repository and simulation (ROS1 Noetic)
+
+Running the simulation in Gazebo requires pedsim_ros (to simulate the humans).
+To install pedsim_ros and other dependencies, proceed as follows:
 The default version is ROS Noetic.
 
-```bash
+**Simulation Dependencies**
+```
 mkdir -p crowdsurfer_ws/src && cd crowdsurfer_ws/src
 git clone https://github.com/TempleRAIL/robot_gazebo.git
 git clone https://github.com/Smart-Wheelchair-RRC/pedsim_ros_with_gazebo.git
 wget https://raw.githubusercontent.com/zzuxzt/turtlebot2_noetic_packages/master/turtlebot2_noetic_install.sh
 sudo sh turtlebot2_noetic_install.sh
-git clone https://github.com/Smart-Wheelchair-RRC/CrowdSurfer.git
-cd ..
-catkin build
 ```
 
-## Run Demo
+**Clone our repo**
+```
+git clone https://github.com/Smart-Wheelchair-RRC/CrowdSurfer.git
+```
 
-Download checkpoints from [this link](https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s)
+**Building the workspace**
+```
+cd ..
+rosdep install --from-paths src --ignore-src -r -y
+catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
+source devel/setup.bash
+```
 
-1. Replace the checkpoint paths for VQVAE and Scoring Network in the [configuration file](./src/CrowdSurfer/configuration/configuration.yaml)
-2. From within crowdsurfer_ws/ in tmux, run:
+### Downloading the checkpoints
+**To the Default Path** -
+```
+cd src/CrowdSurfer/src/CrowdSurfer && mkdir checkpoints
+pip install gdown
+gdown https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s -O checkpoints --folder
+cd ../../../..
+```
+
+**To a Custom Path** -
+
+Download checkpoints from [the drive link](https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s)
+
+Replace the checkpoint paths for VQVAE and PixelCNN in the [configuration file](./src/CrowdSurfer/configuration/configuration.yaml)
+
+## Running the Demo
+
+From within crowdsurfer_ws/ in tmux, run:
 
 ```bash
 bash src/CrowdSurfer/src/CrowdSurfer/run_CrowdSurfer.sh
 ```
 
-## Functionalities
 
-1. TRAIN_VQVAE
-2. TRAIN_PIXELCNN
-3. TRAIN_SCORING_NETWORK
-4. INFERENCE_VQVAE
-5. INFERENCE_PIXELCNN
-6. INFERENCE_COMPLETE
-7. VISUALIZE
 
-## INFERENCE_COMPLETE
-
-Runs the entire pipeline and saves the visualization in the output directory. To run this configuration, please make the following changes:
-
-1. Provide the full path for the best checkpoints of all three models (VQVAE, PixelCNN and Scoring-Network).
-
-    - You might have to add "pytorch_model.bin" at the end depending upon the version of HF Accelerator you are using.
-
-2. Specify the dataset path.
-
-    - The bag file you want to inference on must be processed using the processing function (Run `process_bags.py`).
-    - Additionally, make sure that the processed bag file along with the `index.txt` is in a folder called "inference".
-
-3. You have a choice of using PROJECTION or PRIEST in the "projection" section.
-
-    - Select the number of iterations.
-    - If you want the projection guidance to take into account obstacle constraints, set "use_obstacle_constraints" as true.
-
-4. The mode has to be set as "INFERENCE_COMPLETE".
-
-5. Set "visualize" as true.
-
-6. After making changes in the YAML file, simply run `main.py` present in the root folder.
-
-7. Look for the outputs in `./outputs`.
-
-## VISUALIZE
-
-This mode visualizes the processed dataset.
-
-1. Set the mode as "VISUALIZE".
-2. Set the dataset path, and coefficient configuration.
-3. Put processed bag files in a folder called `inference`. `index.txt` should also be present in the folder.
+## If you liked our work, please consider citing us -
+**Bibtex** -
+```
+@misc{kumar2025crowdsurfersamplingoptimizationaugmented,
+      title={CrowdSurfer: Sampling Optimization Augmented with Vector-Quantized Variational AutoEncoder for Dense Crowd Navigation}, 
+      author={Naman Kumar and Antareep Singha and Laksh Nanwani and Dhruv Potdar and Tarun R and Fatemeh Rastgar and Simon Idoko and Arun Kumar Singh and K. Madhava Krishna},
+      year={2025},
+      eprint={2409.16011},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2409.16011}, 
+}
+```
