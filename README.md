@@ -66,6 +66,12 @@ source src/CrowdSurfer/.venv/bin/activate
 uv sync --active
 ```
 
+Alternatively, using the same conda environment as above, run:
+```bash
+export VIRTUAL_ENV=$CONDA_PREFIX
+uv sync --active
+```
+
 ### Set up the simulation (ROS1 Noetic)
 
 Running the simulation in Gazebo requires pedsim_ros (to simulate the humans).
