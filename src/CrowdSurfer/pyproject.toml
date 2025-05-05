@@ -1,0 +1,42 @@
+[project]
+name = "local-dynamic-navigation"
+version = "1.0.0"
+description = ""
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "accelerate>=1.6.0",
+    "hydra-core>=1.3.2",
+    "jax[cuda12]>=0.5.3",
+    "open3d>=0.19.0",
+    "rosbag>=1.15.11",
+    "torch>=2.5.1",
+    "torchvision>=0.20.1",
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", marker = "sys_platform != 'linux'" },
+  { index = "pytorch-cu121", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+  { index = "pytorch-cpu", marker = "sys_platform != 'linux'" },
+  { index = "pytorch-cu121", marker = "sys_platform == 'linux'" },
+]
+rosbag = [
+  { index = "rosbag" }
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[[tool.uv.index]]
+name = "rosbag"
+url = "https://rospypi.github.io/simple/"
