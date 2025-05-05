@@ -61,15 +61,15 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 2. Setup environment and sync dependencies
 ```bash
-uv venv --python 3.10 --system-site-packages src/CrowdSurfer/.venv
-source src/CrowdSurfer/.venv/bin/activate
-uv sync --active
+uv venv --python 3.10 --system-site-packages CrowdSurfer/src/CrowdSurfer/.venv
+source CrowdSurfer/src/CrowdSurfer/.venv/bin/activate
+uv sync --active --project CrowdSurfer/src/CrowdSurfer
 ```
 
 Alternatively, using the same conda environment as above, run:
 ```bash
 export VIRTUAL_ENV=$CONDA_PREFIX
-uv sync --active
+uv sync --active --project CrowdSurfer/src/CrowdSurfer
 ```
 
 ### Set up the simulation (ROS1 Noetic)
