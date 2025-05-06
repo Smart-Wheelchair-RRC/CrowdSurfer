@@ -89,12 +89,6 @@ class ProjectionConfiguration:
     max_dynamic_obstacles: int = 10
     max_static_obstacles: int = 50
     padding: int = 1000
-    max_velocity: float = 1.0
-    v_des: float = 1.0
-    weight_track: float = 1.0
-    weight_smoothness: float = 0.2
-    robot_radius: float = 1.4
-    obstacles_radius: float = 0.3
 
 
 @dataclass
@@ -117,7 +111,6 @@ class LiveConfiguration:
         DynamicObstaclesMessageType.MARKER_ARRAY
     )
     use_global_path: bool = True
-    omega_max: float = 0.4
 
 
 @dataclass

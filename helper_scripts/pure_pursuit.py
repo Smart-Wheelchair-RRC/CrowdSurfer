@@ -50,14 +50,14 @@ class PurePursuit:
     # Constructor
     def __init__(self):
         # initialize parameters
-        self.lookahead = 2  # rospy.get_param('~lookahead', 5.0)
+        self.lookahead = 1  # rospy.get_param('~lookahead', 5.0)
         self.rate = rospy.get_param("~rate", 20.0)
         self.goal_margin = 0.9  # rospy.get_param('~goal_margin', 3.0)
 
         self.wheel_base = 0.23  # rospy.get_param('~wheel_base', 0.16)
         self.wheel_radius = 0.025  # rospy.get_param('~wheel_radius', 0.033)
-        self.v_max = 0.3  # 0.5 #rospy.get_param('~v_max', 0.22)
-        self.w_max = 0.4  # 5 #2 #rospy.get_param('~w_max', 2.84)
+        self.v_max = 0.5  # 0.5 #rospy.get_param('~v_max', 0.22)
+        self.w_max = 5  # 5 #2 #rospy.get_param('~w_max', 2.84)
 
         # Initialize ROS objects
         # self.goal_sub = rospy.Subscriber("/move_base/current_goal", PoseStamped, self.goal_callback)
@@ -88,7 +88,7 @@ class PurePursuit:
         trans = rot = None
         # look up the current pose of the base_footprint using the tf tree
         try:
-            (trans, rot) = self.tf_listener.lookupTransform("/map_grid", "/chassis", rospy.Time(0))
+            (trans, rot) = self.tf_listener.lookupTransform("/map", "/base_link", rospy.Time(0))
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
             rospy.logwarn("Could not get robot pose")
             return (np.array([np.nan, np.nan]), np.nan)
@@ -228,7 +228,7 @@ class PurePursuit:
             trans = rot = None
             # look up the current pose of the base_footprint using the tf tree
             try:
-                (trans, rot) = self.tf_listener.lookupTransform("/map_grid", "/chassis", rospy.Time(0))
+                (trans, rot) = self.tf_listener.lookupTransform("/map", "/base_link", rospy.Time(0))
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 rospy.logwarn("Could not get robot pose")
                 return (np.array([np.nan, np.nan]), np.nan)

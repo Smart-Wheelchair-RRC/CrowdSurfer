@@ -15,12 +15,10 @@ vqvae:
     num_embeddings: 64
     embedding_dim: 4
     # hidden_channels: 96
-    checkpoint_path: "/home/laksh/crowdsurfer_ws/src/CrowdSurfer_wheelchair_livox/src/CrowdSurfer/checkpoints/vqvae_best_64_4.bin"
+    checkpoint_path: "../../../src/CrowdSurfer/src/CrowdSurfer/checkpoints/vqvae_best_64_4.bin"
 pixelcnn:
-    #   observation_embedding_dim: 32
-    checkpoint_path: "/home/laksh/crowdsurfer_ws/src/CrowdSurfer_wheelchair_livox/src/CrowdSurfer/checkpoints/pixelcnn_best_64_4.bin"
-scoring_network:
-    num_samples: 50
+    # observation_embedding_dim: 32
+    checkpoint_path: "../../../src/CrowdSurfer/src/CrowdSurfer/checkpoints/pixelcnn_best_64_4.bin"
 trainer:
     results_directory: results
     batch_size: 4096
@@ -48,19 +46,15 @@ projection:
     use_obstacle_constraints: true
     # max_dynamic_obstacles: 10
     max_static_obstacles: 100
-#   padding: 1000
-    robot_radius: 1.1
-    obstacles_radius: 0.3
-    max_velocity: 0.3
-    v_des: 0.6
+    # padding: 1000
 live:
-    world_frame: map_grid
-    robot_base_frame: chassis
+    world_frame: map
+    robot_base_frame: base_link
     odometry_topic: /odom
     dynamic_obstacle_topic: /track_ped
-    point_cloud_topic: /livox/pcd_2d
+    # point_cloud_topic: /pointcloud
     laser_scan_topic: /scan
-    velocity_command_topic: /wheelchair_diff/cmd_vel
+    velocity_command_topic: mobile_base/cmd_vel
     goal_topic: /final_goal # /move_base_simple/goal
     dynamic_obstacle_message_type: TRACKED_PERSONS
     sub_goal_topic: /subgoal

@@ -4,17 +4,20 @@ import colorsys
 import os
 import time
 
+import message_filters
 import numpy as np
 import rospy
 
 # from tf.transformations import euler_from_quaternion
 import tf
-from geometry_msgs.msg import PoseStamped, Twist
-from inference import LivePipeline
-from nav_msgs.msg import Path
-from sensor_msgs.msg import PointCloud2
-from std_msgs.msg import Header, Empty
-from visualization_msgs.msg import MarkerArray
+from geometry_msgs.msg import Point, PoseStamped, Twist
+from nav_msgs.msg import Odometry, Path
+from pedsim_msgs.msg import AgentStates, TrackedPersons
+from sensor_msgs.msg import LaserScan, PointCloud
+from std_msgs.msg import Header
+from tf.transformations import euler_from_quaternion, quaternion_matrix
+from visualization_msgs.msg import Marker, MarkerArray
+
 from configuration import (
     Configuration,
     DynamicObstaclesMessageType,
@@ -22,10 +25,7 @@ from configuration import (
     check_configuration,
     initialize_configuration,
 )
-from pedsim_msgs.msg import TrackedPersons, AgentStates
-
-np.float = np.float64
-import ros_numpy
+from inference import LivePipeline
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
@@ -50,7 +50,9 @@ class ROSInterface:
 
         self.world_frame = configuration.live.world_frame
         self.robot_base_frame = configuration.live.robot_base_frame
-        self.point_cloud = np.full((1000, 3), configuration.projection.padding)
+        self.odom = np.full((3), 0.0)
+        self.laser_scan = np.full((2, 1080), configuration.projection.padding)
+        self.point_cloud = np.full((2, 1000), configuration.projection.padding)
         # self.point_cloud = np.arange(2000).reshape(2, 1000)
         self.vel = [0, 0]
         self.acc = [0, 0]
@@ -66,7 +68,17 @@ class ROSInterface:
         self.dynamic_obstacles[:, 2:, :] = 0
 
         self.listener = tf.TransformListener()
-        self.sub_pcd = rospy.Subscriber(configuration.live.point_cloud_topic, PointCloud2, self.update_pointcloud)
+        self.sub_scan = message_filters.Subscriber(configuration.live.laser_scan_topic, LaserScan)
+        self.sub_pcd = message_filters.Subscriber(configuration.live.point_cloud_topic, PointCloud)
+        self.sub_odom = message_filters.Subscriber(configuration.live.odometry_topic, Odometry)
+
+        ts = message_filters.ApproximateTimeSynchronizer(
+            [self.sub_odom, self.sub_pcd, self.sub_scan],
+            queue_size=20,
+            slop=1,
+            allow_headerless=True,
+        )
+        ts.registerCallback(self.callback)
 
         self.create_dynamic_obstacle_subscriber(
             configuration.live.dynamic_obstacle_topic, configuration.live.dynamic_obstacle_message_type
@@ -86,7 +98,6 @@ class ROSInterface:
 
         self.num_sample = 6
         # self.i = -1
-        self.max_angular_vel = configuration.live.omega_max
 
     def create_dynamic_obstacle_subscriber(self, topic_name: str, msg_type: DynamicObstaclesMessageType):
         if msg_type == DynamicObstaclesMessageType.MARKER_ARRAY:
@@ -146,8 +157,86 @@ class ROSInterface:
                 self.total_rollout_time = 0
                 self.num_rollouts = 0
 
-    def update_pointcloud(self, point_cloud_message: PointCloud2):
-        self.point_cloud = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(point_cloud_message)
+    def update_laser_scan(self, laser_scan_message: LaserScan):
+        max_useful_range = 50
+        maximum_points = 1080
+        ranges = np.array(laser_scan_message.ranges)
+
+        # Check for zero or very small angle_increment
+        if abs(laser_scan_message.angle_increment) < 1e-10:
+            num_points = len(ranges)
+            angles = np.linspace(laser_scan_message.angle_min, laser_scan_message.angle_max, num_points)
+        else:
+            angles = np.arange(
+                laser_scan_message.angle_min,
+                laser_scan_message.angle_max + laser_scan_message.angle_increment,
+                laser_scan_message.angle_increment,
+            )
+
+        # Ensure angles and ranges have the same length. If not, set as same.
+        if len(angles) != len(ranges):
+            min_len = min(len(angles), len(ranges))
+            angles = angles[:min_len]
+            ranges = ranges[:min_len]
+
+        valid_ranges = (
+            (ranges >= laser_scan_message.range_min)
+            & ((ranges <= laser_scan_message.range_max) | (np.isinf(laser_scan_message.range_max)))
+            & (ranges <= max_useful_range)
+        )
+        valid_ranges_array = ranges[valid_ranges]
+        valid_angles_array = angles[valid_ranges]
+
+        # Pad remaining positions for consistent array length
+        padded_ranges = np.pad(
+            valid_ranges_array,
+            (0, maximum_points - len(valid_ranges_array)),
+            mode="constant",
+            constant_values=np.nan,
+        )[:maximum_points]
+        padded_angles = np.pad(
+            valid_angles_array,
+            (0, maximum_points - len(valid_angles_array)),
+            mode="constant",
+            constant_values=np.nan,
+        )[:maximum_points]
+
+        self.laser_scan = np.stack((padded_ranges, padded_angles), axis=-1)
+
+    def callback(
+        self,
+        odom: Odometry,
+        point_cloud_message: PointCloud,
+        laser_scan_message: LaserScan,
+    ):
+        x, y, theta = (
+            odom.pose.pose.position.x,
+            odom.pose.pose.position.y,
+            odom.pose.pose.orientation.z,
+        )
+        # print(odom.pose.pose.position.x, odom.pose.pose.position.y)
+        _, _, theta = euler_from_quaternion(
+            [
+                odom.pose.pose.orientation.x,
+                odom.pose.pose.orientation.y,
+                odom.pose.pose.orientation.z,
+                odom.pose.pose.orientation.w,
+            ]
+        )
+        self.odom = np.array([x, y, theta])
+        # TODO: split into vx, vy ?
+        # self.vel = [v, w]
+
+        self.update_laser_scan(laser_scan_message)
+
+        self.update_pointcloud(point_cloud_message)
+
+    def update_pointcloud(self, point_cloud_message: PointCloud):
+        pcd_array = []
+        for p in point_cloud_message.points:
+            pcd_array.append([p.x, p.y, p.z])
+
+        self.point_cloud = np.array(pcd_array)
 
     def update_dynamic_obstacles_from_marker_array(self, dynamic_obstacles: MarkerArray):
         if len(dynamic_obstacles.markers) > 0:
@@ -231,6 +320,7 @@ class ROSInterface:
                 np.array(self.subgoal, dtype=np.float32),
                 np.array(self.vel, dtype=np.float32),
                 np.array(self.acc, dtype=np.float32),
+                np.array(self.laser_scan, dtype=np.float32),
                 np.array(self.point_cloud, dtype=np.float32),
                 np.array(self.dynamic_obstacles, dtype=np.float32),
             )
@@ -262,14 +352,19 @@ class ROSInterface:
             v_t_control = norm_v_t * np.cos(zeta)
             # print("zeta", zeta)
 
-            omega_control = -zeta / (self.num_sample * 15 * 0.01)
-            v_t_control = min(max(v_t_control, 0), self.pipeline.priest_planner.v_max)
+            omega_control = -zeta / (self.num_sample * 5 * 0.01)
 
-            if np.abs(omega_control) > self.max_angular_vel:
-                omega_control = np.sign(omega_control) * self.max_angular_vel
+            # self.vx_init = vx_control
+            # self.vy_init = vy_control
 
-            cmd_vel.linear.x = v_t_control
-            cmd_vel.angular.z = omega_control
+            # self.ax_init = ax_control
+            # self.ay_init = ay_control
+            if self.check_dynamic_obstacle_distance_for_stopping():
+                cmd_vel.linear.x = 0
+                cmd_vel.angular.z = omega_control * 1.5
+            else:
+                cmd_vel.linear.x = v_t_control
+                cmd_vel.angular.z = omega_control
 
             print("Control", v_t_control, omega_control)
             self.pub_vel.publish(cmd_vel)
