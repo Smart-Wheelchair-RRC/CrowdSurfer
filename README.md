@@ -22,65 +22,88 @@ This repository contains the code for the paper "CrowdSurfer: Sampling Optimizat
 
 All configuration is done via [this configuration file](./src/CrowdSurfer/configuration/configuration.yaml).
 
-## Installation (Prerequisites - ROS1 Noetic, Miniconda, Cuda 11.8)
+## Installation (Prerequisites - ROS1 Noetic, CUDA 11.8 / 12.1)
 
+### Create a workspace
+```bash
+mkdir -p ~/crowdsurfer_ws/src
+cd ~/crowdsurfer_ws/src
 ```
-conda create -n crowdsurfer python=3.8 -y
+
+### Clone CrowdSurfer
+```
+git clone https://github.com/Smart-Wheelchair-RRC/CrowdSurfer.git
+```
+
+### Install Dependencies
+#### Method 1: Conda (Manual)
+1. Create Conda environment
+```bash
+conda create -n crowdsurfer python=3.10 -y
 conda activate crowdsurfer
 ```
-
-### Install the repo dependencies (tested with Cuda 11.8)
-```
-pip install open3d
-pip install jax==0.2.20 jaxlib==0.3.2+cuda11.cudnn82 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-pip install pycryptodomex
-pip install gnupg
-pip install rospkg
-pip install networkx==3.1
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-pip install hydra-core
-pip install accelerate
+2. Install Dependencies
+```bash
+pip install "open3d>=0.19.0"
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install "jax[cuda12]"
+pip install "hydra-core>=1.3.2"
+pip install "accelerate>=1.6.0"
+pip install rosbag --extra-index-url https://rospypi.github.io/simple/
 ```
 
-### Setting up the repository and simulation (ROS1 Noetic)
+#### Method 2: UV (Automatic)
+1. Install UV from [here](https://docs.astral.sh/uv/getting-started/installation/) or by running:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+2. Setup environment and sync dependencies
+```bash
+uv venv --python 3.10 --system-site-packages CrowdSurfer/src/CrowdSurfer/.venv
+source CrowdSurfer/src/CrowdSurfer/.venv/bin/activate
+uv sync --active --project CrowdSurfer/src/CrowdSurfer
+```
+
+Alternatively, using the same conda environment as above, run:
+```bash
+export VIRTUAL_ENV=$CONDA_PREFIX
+uv sync --active --project CrowdSurfer/src/CrowdSurfer
+```
+
+### Set up the simulation (ROS1 Noetic)
 
 Running the simulation in Gazebo requires pedsim_ros (to simulate the humans).
 To install pedsim_ros and other dependencies, proceed as follows:
 The default version is ROS Noetic.
 
-**Simulation Dependencies**
-```
-mkdir -p crowdsurfer_ws/src && cd crowdsurfer_ws/src
+#### Install Simulation Dependencies
+```bash
 git clone https://github.com/TempleRAIL/robot_gazebo.git
 git clone https://github.com/Smart-Wheelchair-RRC/pedsim_ros_with_gazebo.git
 wget https://raw.githubusercontent.com/zzuxzt/turtlebot2_noetic_packages/master/turtlebot2_noetic_install.sh
 sudo sh turtlebot2_noetic_install.sh
 ```
 
-**Clone our repo**
-```
-git clone https://github.com/Smart-Wheelchair-RRC/CrowdSurfer.git
-```
-
-**Building the workspace**
-```
-cd ..
+### Build the  workspace
+```bash
+cd ~/crowdsurfer_ws
 rosdep install --from-paths src --ignore-src -r -y
 catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 ```
 
-### Downloading the checkpoints
-**To the Default Path** -
+### Download the checkpoints
+#### To the Default Path
 ```
 cd src/CrowdSurfer/src/CrowdSurfer && mkdir checkpoints
 pip install gdown
 gdown https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s -O checkpoints --folder
-cd ../../../..
+cd ~/crowdsurfer_ws
 ```
 
-**To a Custom Path** -
-
+#### To a Custom Path
 Download checkpoints from [the drive link](https://drive.google.com/drive/folders/1HSRrbuwwNk9_C1WKN9qnStjemFLukO8s)
 
 Replace the checkpoint paths for VQVAE and PixelCNN in the [configuration file](./src/CrowdSurfer/configuration/configuration.yaml)
