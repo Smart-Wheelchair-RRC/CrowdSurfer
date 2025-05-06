@@ -56,10 +56,8 @@ projection:
 live:
     world_frame: map_grid
     robot_base_frame: chassis
-    odometry_topic: /odom
     dynamic_obstacle_topic: /track_ped
     point_cloud_topic: /livox/pcd_2d
-    laser_scan_topic: /scan
     velocity_command_topic: /wheelchair_diff/cmd_vel
     goal_topic: /final_goal # /move_base_simple/goal
     dynamic_obstacle_message_type: TRACKED_PERSONS

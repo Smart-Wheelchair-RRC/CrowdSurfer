@@ -101,10 +101,8 @@ class ProjectionConfiguration:
 class LiveConfiguration:
     world_frame: str = "rplidar"
     robot_base_frame: str = "base_link"
-    odometry_topic: str = "/odometry"
     dynamic_obstacle_topic: str = "/pedestrians_pose"
     point_cloud_topic: str = "/pointcloud"
-    laser_scan_topic: str = "/laserscan"
     velocity_command_topic: str = "/cmd_vel"
     goal_topic: str = "move_base_simple/goal"
     sub_goal_topic: str = "/subgoal"
