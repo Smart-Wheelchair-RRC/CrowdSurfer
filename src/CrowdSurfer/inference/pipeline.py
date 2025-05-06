@@ -97,6 +97,8 @@ class Pipeline:
         else:
             self.scoring_network = None
 
+        inflation_radius = configuration.projection.obstacles_radius + configuration.projection.robot_radius
+
         self.projection_guidance = ProjectionGuidance(
             num_obstacles=(
                 self.max_projection_dynamic_obstacles
@@ -106,8 +108,8 @@ class Pipeline:
             ),
             num_timesteps=configuration.dataset.trajectory_length,
             total_time=configuration.dataset.trajectory_time,
-            obstacle_ellipse_semi_major_axis=0.5,
-            obstacle_ellipse_semi_minor_axis=0.5,
+            obstacle_ellipse_semi_major_axis=inflation_radius,
+            obstacle_ellipse_semi_minor_axis=inflation_radius,
             max_projection_iterations=2,
             device=self.device,
         )
@@ -120,15 +122,17 @@ class Pipeline:
                 num_static_obstacles=self.max_projection_static_obstacles,
                 time_horizon=configuration.dataset.trajectory_time,
                 trajectory_length=configuration.dataset.trajectory_length,
-                tracking_weight=1.0,
-                # weight_smoothness=0.8,
-                static_obstacle_semi_minor_axis=0.8,
-                static_obstacle_semi_major_axis=0.8,
-                dynamic_obstacle_semi_minor_axis=0.8,
-                dynamic_obstacle_semi_major_axis=0.8,
+                tracking_weight=configuration.projection.weight_track,
+                weight_smoothness=configuration.projection.weight_smoothness,
+                static_obstacle_semi_minor_axis=inflation_radius,
+                static_obstacle_semi_major_axis=inflation_radius,
+                dynamic_obstacle_semi_minor_axis=inflation_radius,
+                dynamic_obstacle_semi_major_axis=inflation_radius,
                 num_waypoints=configuration.dataset.trajectory_length,
                 trajectory_batch_size=self.num_samples,
                 max_outer_iterations=configuration.projection.num_priest_iterations,
+                max_velocity=configuration.projection.max_velocity,
+                desired_velocity=configuration.projection.v_des,
             )
 
     def _get_probability_distribution_and_embedding_from_pixelcnn(

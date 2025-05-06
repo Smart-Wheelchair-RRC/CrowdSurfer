@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<launch>
+  <arg default="$(find wheelchair_mapping)/maps/fast_lio/lab_map_with_outside_corridor.yaml" name="map_file" />
+  <arg default="$(find fast_lio_localization)/PCD/lab_map_with_outside_corridor.pcd" name="pcd_path" />
+
+  <arg name="odom_frame_id"   default="camera_init"/>
+  <arg name="base_frame_id"   default="chassis"/>
+  <arg name="global_frame_id" default="map_grid"/>
+  <arg name="odom_topic" default="/Odometry" />
+
+  <!-- <arg name="laser_topic" default="scan_filtered" /> -->
+  <arg name="custom_param_file" default="$(find robot_gazebo)/param/dummy.yaml"/>
+  <arg name="cmd_vel_topic" default="cmd_vel" />
+  <arg default="true" name="open_rviz" />
+  <arg name="output" default="log"/>
+  <arg name="enable_opencv" default="true"/>
+  <arg name="enable_console_output" default="true"/>
+  <!-- <arg default="/localization" name="odom_topic" /> -->
+  <arg default="$(find xacro)/xacro --inorder '$(find wheelchair_description)/urdf/wheelchair_real_livox.xacro'" name="urdf_file" />
+  
+  <!-- <node args="$(arg map_file)" name="map_server" pkg="map_server" type="map_server" /> -->
+  
+  <include file="$(find wheelchair_nav_cameras)/launch/livox_launch/localisation.launch">
+    <arg name="pcd_path" value="$(arg pcd_path)"/>
+    <arg name="open_rviz" value="false"/>
+  </include>
+
+  <!-- <node name="locomotor" output="screen" pkg="locomotor" respawn="false" type="locomotor2"> -->
+  <node name="locomotor" output="screen" pkg="locomove_base" respawn="false" type="move_base">
+    <rosparam command="load" file="$(find wheelchair_nav_cameras)/livox_params/costmap_common_params.yaml" ns="global_costmap" />
+    <rosparam command="load" file="$(find wheelchair_nav_cameras)/livox_params/costmap_common_params.yaml" ns="local_costmap" />
+    <rosparam command="load" file="$(find wheelchair_nav_cameras)/livox_params/local_costmap_params.yaml" />
+    <rosparam command="load" file="$(find wheelchair_nav_cameras)/livox_params/global_costmap_params.yaml" />
+    <rosparam command="load" file="$(find wheelchair_nav_cameras)/livox_params/move_base_params.yaml" />
+    <rosparam command="load" file="$(find wheelchair_nav_cameras)/livox_params/dwb_local_planner_params_voronoi.yaml" />
+    <rosparam command="load" file="$(find wheelchair_nav_cameras)/livox_params/global_planner_params_voronoi.yaml" />
+    <rosparam file="$(arg custom_param_file)" command="load" />
+    
+    <!-- reset frame_id parameters using user input data -->
+    <param name="global_costmap/global_frame" value="$(arg global_frame_id)"/>
+    <param name="global_costmap/robot_base_frame" value="$(arg base_frame_id)"/>
+    <param name="local_costmap/global_frame" value="$(arg odom_frame_id)"/>
+    <param name="local_costmap/robot_base_frame" value="$(arg base_frame_id)"/>
+    <param name="DWAPlannerROS/global_frame_id" value="$(arg odom_frame_id)"/>
+
+    <remap from="cmd_vel" to="$(arg cmd_vel_topic)"/>
+    <remap from="odom" to="$(arg odom_topic)"/>
+
+  </node>
+
+    <!-- Subgoal Publisher -->
+  <node name="pure_pursuit" pkg="crowdsurfer_ros" type="pure_pursuit.py" output="screen" required="true">
+    <!-- <remap from="path" to="/locomotor/global_plan"/> -->
+    <remap from="path" to="/locomotor/global_plan"/>
+    <param name="rate"  type="double" value="20"  />
+  </node>
+
+    <!-- Robot Pose Publisher -->
+  <node name="robot_pose_pub" pkg="crowdsurfer_ros" type="robot_pose_pub.py"/>
+ 
+  <!-- Goal visualization -->
+  <node name="goal_visualize" pkg="crowdsurfer_ros" type="goal_visualize.py" output="screen" />
+
+  <!-- <include file="$(find kangaroo_driver)/launch/kangaroo_driver.launch"/> -->
+
+  <node name="pointcloud_3d_to_2d" pkg="wheelchair_laser" type="pointcloud_3d_to_2d.py"/>
+
+  <node args="-d $(find crowdsurfer_ros)/rviz/livox_nav.rviz" name="rviz" pkg="rviz" required="true" type="rviz" />
+
+</launch>
