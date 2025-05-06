@@ -50,9 +50,9 @@ projection:
     max_static_obstacles: 100
 #   padding: 1000
     robot_radius: 1.1
-    obstacles_radius: 0.3
+    obstacle_radius: 0.3
     max_velocity: 0.3
-    v_des: 0.6
+    desired_velocity: 0.6
 live:
     world_frame: map_grid
     robot_base_frame: chassis

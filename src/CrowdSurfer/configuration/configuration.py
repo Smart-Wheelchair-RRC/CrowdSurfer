@@ -90,11 +90,11 @@ class ProjectionConfiguration:
     max_static_obstacles: int = 50
     padding: int = 1000
     max_velocity: float = 1.0
-    v_des: float = 1.0
-    weight_track: float = 1.0
-    weight_smoothness: float = 0.2
+    desired_velocity: float = 1.0
+    tracking_weight: float = 1.0
+    smoothness_weight: float = 0.2
     robot_radius: float = 1.4
-    obstacles_radius: float = 0.3
+    obstacle_radius: float = 0.3
 
 
 @dataclass
