@@ -272,7 +272,7 @@ class PurePursuit:
 
         # publish the cnn goal:
         header = Header()
-        header.frame_id = "base_link"
+        header.frame_id = "chassis"
         cnn_goal = PoseStamped()
         cnn_goal.header = header
         cnn_goal.pose.position.x = goal[0]

@@ -111,9 +111,7 @@ class LiveConfiguration:
     padding: float = 1000
     time_horizon: float = 3
     previous_time_steps_for_dynamic: int = 5
-    dynamic_obstacle_message_type: DynamicObstaclesMessageType = (
-        DynamicObstaclesMessageType.MARKER_ARRAY
-    )
+    dynamic_obstacle_message_type: DynamicObstaclesMessageType = DynamicObstaclesMessageType.MARKER_ARRAY
     use_global_path: bool = True
     omega_max: float = 0.4
 

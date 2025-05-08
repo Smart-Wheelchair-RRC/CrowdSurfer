@@ -56,12 +56,12 @@ projection:
 live:
     world_frame: map_grid
     robot_base_frame: chassis
-    dynamic_obstacle_topic: /track_ped
     point_cloud_topic: /livox/pcd_2d
     velocity_command_topic: /wheelchair_diff/cmd_vel
     goal_topic: /final_goal # /move_base_simple/goal
-    dynamic_obstacle_message_type: TRACKED_PERSONS
     sub_goal_topic: /subgoal
+    dynamic_obstacle_message_type: MARKER_ARRAY
+    dynamic_obstacle_topic: /onboard_detector/dynamic_obstacle_velocity
     use_global_path: true
     threshold_distance: 1.0
 mode: LIVE
