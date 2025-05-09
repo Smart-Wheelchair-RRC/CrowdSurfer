@@ -40,6 +40,7 @@ pip install networkx==3.1
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 pip install hydra-core
 pip install accelerate
+pip install empy==3.3.4
 ```
 
 ### Setting up the repository and simulation (ROS1 Noetic)
@@ -66,7 +67,7 @@ git clone https://github.com/Smart-Wheelchair-RRC/CrowdSurfer.git
 ```
 cd ..
 rosdep install --from-paths src --ignore-src -r -y
-catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
+catkin_make
 source devel/setup.bash
 ```
 
