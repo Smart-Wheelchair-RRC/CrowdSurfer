@@ -46,9 +46,9 @@ class DatasetConfiguration:
     directory: str = "data"
     trajectory_length: int = 50
     trajectory_time: int = 5
-    coefficient_configuration: List[CoefficientConfiguration] = [
-        CoefficientConfiguration.BEST_EXPERT
-    ]
+    coefficient_configuration: List[CoefficientConfiguration] = field(
+        default_factory=lambda: [CoefficientConfiguration.BEST_EXPERT]
+    )
     static_obstacle_type: StaticObstacleType = StaticObstacleType.OCCUPANCY_MAP
     num_elite_coefficients: int = 80
     padding: int = 0
