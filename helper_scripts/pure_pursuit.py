@@ -8,16 +8,14 @@
 # This script is to publish the sub-goal point using the pure pursit algorithm.
 # ------------------------------------------------------------------------------
 
-import rospy
-from nav_msgs.msg import Path
-from geometry_msgs.msg import Twist, PoseStamped
-import tf
-from geometry_msgs.msg import Point
-from std_msgs.msg import Header
-
+import threading
 
 import numpy as np
-import threading
+import rospy
+import tf
+from geometry_msgs.msg import Point, PoseStamped, Twist
+from nav_msgs.msg import Path
+from std_msgs.msg import Header
 
 
 class PurePursuit:
@@ -50,22 +48,30 @@ class PurePursuit:
     # Constructor
     def __init__(self):
         # initialize parameters
-        self.lookahead = 2  # rospy.get_param('~lookahead', 5.0)
+        self.lookahead = rospy.get_param(
+            "~lookahead", 1.0
+        )  # rospy.get_param('~lookahead', 5.0)
         self.rate = rospy.get_param("~rate", 20.0)
         self.goal_margin = 0.9  # rospy.get_param('~goal_margin', 3.0)
 
         self.wheel_base = 0.23  # rospy.get_param('~wheel_base', 0.16)
         self.wheel_radius = 0.025  # rospy.get_param('~wheel_radius', 0.033)
-        self.v_max = 0.3  # 0.5 #rospy.get_param('~v_max', 0.22)
-        self.w_max = 0.4  # 5 #2 #rospy.get_param('~w_max', 2.84)
+        self.v_max = rospy.get_param("~v_max", 0.5)  # rospy.get_param('~v_max', 0.22)
+        self.w_max = rospy.get_param("~w_max", 5)  # rospy.get_param('~w_max', 2.84)
 
         # Initialize ROS objects
         # self.goal_sub = rospy.Subscriber("/move_base/current_goal", PoseStamped, self.goal_callback)
         self.path_sub = rospy.Subscriber("path", Path, self.path_callback)
         self.tf_listener = tf.TransformListener()
         # self.cmd_vel_pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
-        self.cnn_goal_pub = rospy.Publisher("subgoal", PoseStamped, queue_size=1)  # , latch=True)
-        self.final_goal_pub = rospy.Publisher("final_goal", PoseStamped, queue_size=1)  # , latch=True)
+        self.cnn_goal_pub = rospy.Publisher(
+            "subgoal", PoseStamped, queue_size=1
+        )  # , latch=True)
+        self.final_goal_pub = rospy.Publisher(
+            "final_goal", PoseStamped, queue_size=1
+        )  # , latch=True)
+        self.world_frame = rospy.get_param("~world_frame", "/map")
+        self.robot_frame = rospy.get_param("~robot_frame", "/base_link")
 
     # Callback function for the path subscriber
     def path_callback(self, msg):
@@ -88,8 +94,14 @@ class PurePursuit:
         trans = rot = None
         # look up the current pose of the base_footprint using the tf tree
         try:
-            (trans, rot) = self.tf_listener.lookupTransform("/map_grid", "/chassis", rospy.Time(0))
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            (trans, rot) = self.tf_listener.lookupTransform(
+                self.world_frame, self.robot_frame, rospy.Time(0)
+            )
+        except (
+            tf.LookupException,
+            tf.ConnectivityException,
+            tf.ExtrapolationException,
+        ):
             rospy.logwarn("Could not get robot pose")
             return (np.array([np.nan, np.nan]), np.nan)
         x = np.array([trans[0], trans[1]])
@@ -120,17 +132,33 @@ class PurePursuit:
         ##### YOUR CODE STARTS HERE #####
         if seg == -1:
             # find closest point on entire pathd
-            for i in range(len(self.path.poses) - 1):  # gets total number of segments and iterates over them all
-                (pt, dist, s) = self.find_closest_point(x, i)  # find the closest point to the robot on segment i
-                if dist < dist_min:  # if new point is closer than the previous best, keep it as the new best point
+            for i in range(
+                len(self.path.poses) - 1
+            ):  # gets total number of segments and iterates over them all
+                (pt, dist, s) = self.find_closest_point(
+                    x, i
+                )  # find the closest point to the robot on segment i
+                if (
+                    dist < dist_min
+                ):  # if new point is closer than the previous best, keep it as the new best point
                     pt_min = pt
                     dist_min = dist
                     seg_min = s
         else:
             # find closest point on segment seg
             # extract the start and end of segment seg from the path
-            p_start = np.array([self.path.poses[seg].pose.position.x, self.path.poses[seg].pose.position.y])
-            p_end = np.array([self.path.poses[seg + 1].pose.position.x, self.path.poses[seg + 1].pose.position.y])
+            p_start = np.array(
+                [
+                    self.path.poses[seg].pose.position.x,
+                    self.path.poses[seg].pose.position.y,
+                ]
+            )
+            p_end = np.array(
+                [
+                    self.path.poses[seg + 1].pose.position.x,
+                    self.path.poses[seg + 1].pose.position.y,
+                ]
+            )
 
             # calculate the unit direction vector and segment length
             v = p_end - p_start
@@ -172,7 +200,12 @@ class PurePursuit:
             ##### YOUR CODE STARTS HERE #####
             seg_max = len(self.path.poses) - 2
             # extract the end of segment seg from the path
-            p_end = np.array([self.path.poses[seg + 1].pose.position.x, self.path.poses[seg + 1].pose.position.y])
+            p_end = np.array(
+                [
+                    self.path.poses[seg + 1].pose.position.x,
+                    self.path.poses[seg + 1].pose.position.y,
+                ]
+            )
             # calculate the distance from x to p_end:
             dist_end = np.linalg.norm(x - p_end)
 
@@ -180,22 +213,40 @@ class PurePursuit:
             while dist_end < self.lookahead and seg < seg_max:
                 seg = seg + 1
                 # extract the end of segment seg from the path
-                p_end = np.array([self.path.poses[seg + 1].pose.position.x, self.path.poses[seg + 1].pose.position.y])
+                p_end = np.array(
+                    [
+                        self.path.poses[seg + 1].pose.position.x,
+                        self.path.poses[seg + 1].pose.position.y,
+                    ]
+                )
                 # calculate the distance from x to p_end:
                 dist_end = np.linalg.norm(x - p_end)
 
             # if searched the whole path, set the goal as the end of the path
             if dist_end < self.lookahead:
                 pt = np.array(
-                    [self.path.poses[seg_max + 1].pose.position.x, self.path.poses[seg_max + 1].pose.position.y]
+                    [
+                        self.path.poses[seg_max + 1].pose.position.x,
+                        self.path.poses[seg_max + 1].pose.position.y,
+                    ]
                 )
             # if found a segment that leaves the circle, find the intersection with the circle
             else:
                 # find the closest point:
                 (pt, dist, seg) = self.find_closest_point(x, seg)
                 # extract the start and end of segment seg from the path
-                p_start = np.array([self.path.poses[seg].pose.position.x, self.path.poses[seg].pose.position.y])
-                p_end = np.array([self.path.poses[seg + 1].pose.position.x, self.path.poses[seg + 1].pose.position.y])
+                p_start = np.array(
+                    [
+                        self.path.poses[seg].pose.position.x,
+                        self.path.poses[seg].pose.position.y,
+                    ]
+                )
+                p_end = np.array(
+                    [
+                        self.path.poses[seg + 1].pose.position.x,
+                        self.path.poses[seg + 1].pose.position.y,
+                    ]
+                )
                 # calculate the unit direction vector and segment length
                 v = p_end - p_start
                 length_seg = np.linalg.norm(v)
@@ -203,12 +254,22 @@ class PurePursuit:
                 # calculate projected distance:
                 dist_projected_x = np.dot(x - pt, v)
                 dist_projected_y = np.linalg.norm(np.cross(x - pt, v))
-                pt = pt + (np.sqrt(self.lookahead**2 - dist_projected_y**2) + dist_projected_x) * v
+                pt = (
+                    pt
+                    + (
+                        np.sqrt(self.lookahead**2 - dist_projected_y**2)
+                        + dist_projected_x
+                    )
+                    * v
+                )
 
             goal = pt
             ##### YOUR CODE ENDS HERE #####
 
-        end_goal_pos = [self.path.poses[-1].pose.position.x, self.path.poses[-1].pose.position.y]
+        end_goal_pos = [
+            self.path.poses[-1].pose.position.x,
+            self.path.poses[-1].pose.position.y,
+        ]
         end_goal_rot = [
             self.path.poses[-1].pose.orientation.x,
             self.path.poses[-1].pose.orientation.y,
@@ -228,8 +289,14 @@ class PurePursuit:
             trans = rot = None
             # look up the current pose of the base_footprint using the tf tree
             try:
-                (trans, rot) = self.tf_listener.lookupTransform("/map_grid", "/chassis", rospy.Time(0))
-            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                (trans, rot) = self.tf_listener.lookupTransform(
+                    self.world_frame, self.robot_frame, rospy.Time(0)
+                )
+            except (
+                tf.LookupException,
+                tf.ConnectivityException,
+                tf.ExtrapolationException,
+            ):
                 rospy.logwarn("Could not get robot pose")
                 return (np.array([np.nan, np.nan]), np.nan)
             x = np.array([trans[0], trans[1]])
@@ -254,7 +321,13 @@ class PurePursuit:
         # transform goal to local coordinates
         ##### YOUR CODE STARTS HERE #####
         # homogeneous transformation matrix:
-        map_T_robot = np.array([[np.cos(theta), -np.sin(theta), x[0]], [np.sin(theta), np.cos(theta), x[1]], [0, 0, 1]])
+        map_T_robot = np.array(
+            [
+                [np.cos(theta), -np.sin(theta), x[0]],
+                [np.sin(theta), np.cos(theta), x[1]],
+                [0, 0, 1],
+            ]
+        )
 
         goal = np.matmul(
             np.linalg.inv(map_T_robot), np.array([[goal[0]], [goal[1]], [1]])
@@ -263,7 +336,10 @@ class PurePursuit:
         ##### YOUR CODE ENDS HERE #####
 
         # final relative goal:
-        relative_goal = np.matmul(np.linalg.inv(map_T_robot), np.array([[end_goal_pos[0]], [end_goal_pos[1]], [1]]))
+        relative_goal = np.matmul(
+            np.linalg.inv(map_T_robot),
+            np.array([[end_goal_pos[0]], [end_goal_pos[1]], [1]]),
+        )
         # Compute the difference to the goal orientation
         orientation_to_target = tf.transformations.quaternion_multiply(
             end_goal_rot, tf.transformations.quaternion_inverse(rot)
@@ -272,13 +348,15 @@ class PurePursuit:
 
         # publish the cnn goal:
         header = Header()
-        header.frame_id = "chassis"
+        header.frame_id = self.robot_frame
         cnn_goal = PoseStamped()
         cnn_goal.header = header
         cnn_goal.pose.position.x = goal[0]
         cnn_goal.pose.position.y = goal[1]
         # cnn_goal.z = 0
-        if not np.isnan(cnn_goal.pose.position.x) and not np.isnan(cnn_goal.pose.position.y):  # ensure data is valid
+        if not np.isnan(cnn_goal.pose.position.x) and not np.isnan(
+            cnn_goal.pose.position.y
+        ):  # ensure data is valid
             self.cnn_goal_pub.publish(cnn_goal)
             print("Subgoal", goal[0], goal[1])
 

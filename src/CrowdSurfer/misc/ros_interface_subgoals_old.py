@@ -9,12 +9,6 @@ import rospy
 
 # from tf.transformations import euler_from_quaternion
 import tf
-from geometry_msgs.msg import PoseStamped, Twist
-from inference import LivePipeline
-from nav_msgs.msg import Path
-from sensor_msgs.msg import PointCloud2
-from std_msgs.msg import Header, Empty
-from visualization_msgs.msg import MarkerArray
 from configuration import (
     Configuration,
     DynamicObstaclesMessageType,
@@ -22,7 +16,13 @@ from configuration import (
     check_configuration,
     initialize_configuration,
 )
-from pedsim_msgs.msg import TrackedPersons, AgentStates
+from geometry_msgs.msg import PoseStamped, Twist
+from inference import LivePipeline
+from nav_msgs.msg import Path
+from pedsim_msgs.msg import AgentStates, TrackedPersons
+from sensor_msgs.msg import PointCloud2
+from std_msgs.msg import Empty, Header
+from visualization_msgs.msg import MarkerArray
 
 np.float = np.float64
 import ros_numpy
@@ -34,8 +34,16 @@ class ROSInterface:
     def __init__(self, configuration: Configuration):
         self.pipeline = LivePipeline(configuration)
 
-        self.Pdot = self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL.detach().cpu().numpy()
-        self.Pddot = self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_SECOND_DIFFERENTIAL.detach().cpu().numpy()
+        self.Pdot = (
+            self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL.detach()
+            .cpu()
+            .numpy()
+        )
+        self.Pddot = (
+            self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_SECOND_DIFFERENTIAL.detach()
+            .cpu()
+            .numpy()
+        )
 
         # use if acceleration output is required
         # self.Pddot = (
@@ -56,7 +64,7 @@ class ROSInterface:
         self.acc = [0, 0]
         self.dynamic_obstacles = np.full(
             (
-                configuration.live.previous_time_steps_for_dynamic,
+                5,
                 4,
                 self.pipeline.max_projection_dynamic_obstacles,
             ),
@@ -66,29 +74,44 @@ class ROSInterface:
         self.dynamic_obstacles[:, 2:, :] = 0
 
         self.listener = tf.TransformListener()
-        self.sub_pcd = rospy.Subscriber(configuration.live.point_cloud_topic, PointCloud2, self.update_pointcloud)
+        self.sub_pcd = rospy.Subscriber(
+            configuration.live.point_cloud_topic, PointCloud2, self.update_pointcloud
+        )
 
         self.create_dynamic_obstacle_subscriber(
-            configuration.live.dynamic_obstacle_topic, configuration.live.dynamic_obstacle_message_type
+            configuration.live.dynamic_obstacle_topic,
+            configuration.live.dynamic_obstacle_message_type,
         )
 
         self.received_goal = False
         self.goal = [0, 0]
         self.subgoal = self.goal
-        self.sub_final_goal = rospy.Subscriber(configuration.live.goal_topic, PoseStamped, self.update_goal)
-        self.sub_subgoal = rospy.Subscriber(configuration.live.sub_goal_topic, PoseStamped, self.update_subgoal)
+        self.sub_final_goal = rospy.Subscriber(
+            configuration.live.goal_topic, PoseStamped, self.update_goal
+        )
+        self.sub_subgoal = rospy.Subscriber(
+            configuration.live.sub_goal_topic, PoseStamped, self.update_subgoal
+        )
 
-        self.pub_vel = rospy.Publisher(configuration.live.velocity_command_topic, Twist, queue_size=10)
-        self.pub_path = rospy.Publisher(configuration.live.path_topic, Path, queue_size=10)
-        self.pub_trajectories = rospy.Publisher("elite_traj", MarkerArray, queue_size=10)
+        self.pub_vel = rospy.Publisher(
+            configuration.live.velocity_command_topic, Twist, queue_size=10
+        )
+        self.pub_path = rospy.Publisher(
+            configuration.live.path_topic, Path, queue_size=10
+        )
+        self.pub_trajectories = rospy.Publisher(
+            "elite_traj", MarkerArray, queue_size=10
+        )
 
         # rospy.Timer(rospy.Duration(10), self.timer_callback)
 
         self.num_sample = 6
         # self.i = -1
-        self.max_angular_vel = configuration.live.omega_max
+        self.max_angular_vel = configuration.live.max_angular_velocity
 
-    def create_dynamic_obstacle_subscriber(self, topic_name: str, msg_type: DynamicObstaclesMessageType):
+    def create_dynamic_obstacle_subscriber(
+        self, topic_name: str, msg_type: DynamicObstaclesMessageType
+    ):
         if msg_type == DynamicObstaclesMessageType.MARKER_ARRAY:
             self.sub_dynamic = rospy.Subscriber(
                 topic_name,
@@ -147,9 +170,13 @@ class ROSInterface:
                 self.num_rollouts = 0
 
     def update_pointcloud(self, point_cloud_message: PointCloud2):
-        self.point_cloud = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(point_cloud_message)
+        self.point_cloud = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(
+            point_cloud_message
+        )
 
-    def update_dynamic_obstacles_from_marker_array(self, dynamic_obstacles: MarkerArray):
+    def update_dynamic_obstacles_from_marker_array(
+        self, dynamic_obstacles: MarkerArray
+    ):
         if len(dynamic_obstacles.markers) > 0:
             obs_array = []
             for obs in dynamic_obstacles.markers:
@@ -157,7 +184,9 @@ class ROSInterface:
 
         self.update_dynamic_obstacles(obs_array)
 
-    def update_dynamic_obstacles_from_agent_states(self, dynamic_obstacles: AgentStates):
+    def update_dynamic_obstacles_from_agent_states(
+        self, dynamic_obstacles: AgentStates
+    ):
         if len(dynamic_obstacles.agent_states) > 0:
             obs_array = []
             for obs in dynamic_obstacles.agent_states:
@@ -171,7 +200,9 @@ class ROSInterface:
                 )
         self.update_dynamic_obstacles(obs_array)
 
-    def update_dynamic_obstacles_from_tracked_persons(self, dynamic_obstacles: TrackedPersons):
+    def update_dynamic_obstacles_from_tracked_persons(
+        self, dynamic_obstacles: TrackedPersons
+    ):
         if len(dynamic_obstacles.tracks) > 0:
             obs_array = []
             for obs in dynamic_obstacles.tracks:
@@ -192,14 +223,16 @@ class ROSInterface:
 
         # get closest dynamic obstacles
         obs_array = np.array(obs_array, dtype=float)
-        obs_array = obs_array[np.argsort(np.linalg.norm(obs_array[:, :2], axis=-1), axis=-1)][
-            : self.pipeline.max_projection_dynamic_obstacles
-        ]
+        obs_array = obs_array[
+            np.argsort(np.linalg.norm(obs_array[:, :2], axis=-1), axis=-1)
+        ][: self.pipeline.max_projection_dynamic_obstacles]
         obs_array = obs_array.T
 
         self.dynamic_obstacles[-1, :, 0 : obs_array.shape[1]] = obs_array
 
-    def check_dynamic_obstacle_distance_for_stopping(self, threshold_distance: float = 1.2, num_obstacles: int = 1):
+    def check_dynamic_obstacle_distance_for_stopping(
+        self, threshold_distance: float = 1.2, num_obstacles: int = 1
+    ):
         current_obstacles = self.dynamic_obstacles[-1, :2, :]
 
         if current_obstacles.shape[1] == 0:
@@ -246,11 +279,13 @@ class ROSInterface:
             best_traj = trajectories[best_index]
             # Publish the selected trajectory and all the other trajectories
             # Check: Frame ID (ego or map)
-            self.publish_trajectories_markers(trajectories, frame_id=self.robot_base_frame)
+            self.publish_trajectories_markers(
+                trajectories, frame_id=self.robot_base_frame
+            )
             self.publish_path_message(best_traj)
 
-            vx_control, vy_control, ax_control, ay_control, norm_v_t, angle_v_t = self.compute_controls(
-                x_best * 0.8, y_best * 0.8
+            vx_control, vy_control, ax_control, ay_control, norm_v_t, angle_v_t = (
+                self.compute_controls(x_best * 0.8, y_best * 0.8)
             )
             # vx_control, vy_control, norm_v_t, angle_v_t = self.compute_controls(x_best, y_best)
 
@@ -318,7 +353,9 @@ class ROSInterface:
             # Add trajectory points
             traj_points = trajectories[traj_idx]
 
-            marker.points = [Point(x=point[0], y=point[1], z=0.0) for point in traj_points]
+            marker.points = [
+                Point(x=point[0], y=point[1], z=0.0) for point in traj_points
+            ]
 
             marker_array.markers.append(marker)
 
@@ -326,7 +363,9 @@ class ROSInterface:
         self.pub_trajectories.publish(marker_array)
 
     def convert_angle(self, angle):
-        angle = np.unwrap(np.array([angle]), discont=np.pi, axis=0, period=6.283185307179586)
+        angle = np.unwrap(
+            np.array([angle]), discont=np.pi, axis=0, period=6.283185307179586
+        )
 
         return angle
 

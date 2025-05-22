@@ -1,0 +1,7 @@
+defaults:
+    - base_trainer
+
+results_directory: "results/vqvae"
+batch_size: 4096
+learning_rate: 3e-4
+num_epochs: 1000

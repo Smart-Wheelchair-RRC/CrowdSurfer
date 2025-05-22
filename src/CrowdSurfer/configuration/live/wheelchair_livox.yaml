@@ -1,0 +1,12 @@
+defaults:
+    - base_live
+
+world_frame: map_grid
+robot_base_frame: chassis
+point_cloud_topic: /livox/pcd_2d
+velocity_command_topic: /wheelchair_diff/cmd_vel
+goal_topic: /final_goal # /move_base_simple/goal
+sub_goal_topic: /subgoal
+dynamic_obstacle_message_type: MARKER_ARRAY
+dynamic_obstacle_topic: /onboard_detector/dynamic_obstacle_velocity
+max_angular_velocity: 0.4

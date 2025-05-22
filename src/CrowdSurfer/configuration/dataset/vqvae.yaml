@@ -1,0 +1,6 @@
+defaults:
+    - base_dataset
+
+coefficient_configuration:
+    - ELITE_PRIEST
+    - ELITE_EXPERT

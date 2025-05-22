@@ -5,8 +5,8 @@ defaults:
     - scoring_network: base_scoring_network
     - trainer: vqvae
     - dataset: pixelcnn # set to pixelcnn for the default inference complete mode
-    - projection: base_projection
-    - live: simulation
+    - projection: 3dlidar
+    - live: wheelchair_livox
     - _self_
     - override hydra/hydra_logging: none
     - override hydra/job_logging: none
@@ -15,4 +15,4 @@ vqvae:
     checkpoint_path: "/home/laksh/crowdsurfer_ws/src/CrowdSurfer_wheelchair_livox/src/CrowdSurfer/checkpoints/vqvae_best_64_4.bin"
 pixelcnn:
     checkpoint_path: "/home/laksh/crowdsurfer_ws/src/CrowdSurfer_wheelchair_livox/src/CrowdSurfer/checkpoints/pixelcnn_best_64_4.bin"
-mode: LIVE
+mode: LIVE_3DLIDAR

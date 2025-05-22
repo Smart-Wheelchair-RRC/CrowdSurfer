@@ -46,7 +46,7 @@ def check_configuration(configuration: Configuration) -> None:
     elif configuration.mode in {Mode.INFERENCE_PIXELCNN, Mode.TRAIN_SCORING_NETWORK}:
         assert configuration.vqvae.checkpoint_path is not None
         assert configuration.pixelcnn.checkpoint_path is not None
-    elif configuration.mode in {Mode.INFERENCE_COMPLETE, Mode.LIVE}:
+    elif configuration.mode in {Mode.INFERENCE_COMPLETE, Mode.LIVE, Mode.LIVE_3DLIDAR}:
         assert configuration.vqvae.checkpoint_path is not None
         assert configuration.pixelcnn.checkpoint_path is not None
         # assert configuration.scoring_network.checkpoint_path is not None
