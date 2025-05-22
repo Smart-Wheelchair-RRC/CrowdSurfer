@@ -598,7 +598,7 @@ def main(configuration: Configuration) -> None:
             interface.plan()
             rate.sleep()
     else:
-        raise ValueError(f"Mode {configuration.mode} not supported for live inference.")
+        raise ValueError(f"Mode {configuration.mode} not supported for this file.")
 
 
 if __name__ == "__main__":
