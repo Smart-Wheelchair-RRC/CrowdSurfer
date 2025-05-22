@@ -132,7 +132,8 @@ class Pipeline:
                 dynamic_obstacle_semi_major_axis=inflation_radius,
                 num_waypoints=configuration.dataset.trajectory_length,
                 trajectory_batch_size=self.num_samples,
-                max_outer_iterations=configuration.projection.num_priest_iterations,
+                max_outer_iterations=configuration.projection.max_outer_iterations,
+                max_inner_iterations=configuration.projection.max_inner_iterations,
                 max_velocity=configuration.projection.max_velocity,
                 desired_velocity=configuration.projection.desired_velocity,
             )

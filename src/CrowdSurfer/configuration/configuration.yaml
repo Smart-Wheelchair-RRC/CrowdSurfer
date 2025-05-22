@@ -3,65 +3,16 @@ defaults:
     - vqvae: base_vqvae
     - pixelcnn: base_pixelcnn
     - scoring_network: base_scoring_network
-    - trainer: base_trainer
-    - dataset: base_dataset
+    - trainer: vqvae
+    - dataset: pixelcnn # set to pixelcnn for the default inference complete mode
     - projection: base_projection
-    - live: base_live
+    - live: simulation
     - _self_
     - override hydra/hydra_logging: none
     - override hydra/job_logging: none
 
 vqvae:
-    num_embeddings: 64
-    embedding_dim: 4
-    # hidden_channels: 96
     checkpoint_path: "/home/laksh/crowdsurfer_ws/src/CrowdSurfer_wheelchair_livox/src/CrowdSurfer/checkpoints/vqvae_best_64_4.bin"
 pixelcnn:
-    #   observation_embedding_dim: 32
     checkpoint_path: "/home/laksh/crowdsurfer_ws/src/CrowdSurfer_wheelchair_livox/src/CrowdSurfer/checkpoints/pixelcnn_best_64_4.bin"
-scoring_network:
-    num_samples: 50
-trainer:
-    results_directory: results
-    batch_size: 4096
-    learning_rate: 3e-4
-    num_epochs: 100
-    # epochs_per_save: 10
-    # use_safetensors_for_saving: false
-    # dataloader_num_workers: 12
-    # dataloader_pin_memory: true
-dataset:
-    directory: data
-    trajectory_length: 50
-    trajectory_time: 5
-    coefficient_configuration:
-        # - BEST_PRIEST
-        # - ELITE_PRIEST
-        - BEST_EXPERT
-        # - ELITE_EXPERT
-    # static_obstacle_type: POINT_CLOUD
-    # num_elite_coefficients: 80
-    # padding: 0
-projection:
-    guidance_type: PRIEST
-    num_priest_iterations: 2
-    use_obstacle_constraints: true
-    # max_dynamic_obstacles: 10
-    max_static_obstacles: 100
-#   padding: 1000
-    robot_radius: 1.1
-    obstacle_radius: 0.3
-    max_velocity: 0.3
-    desired_velocity: 0.6
-live:
-    world_frame: map_grid
-    robot_base_frame: chassis
-    point_cloud_topic: /livox/pcd_2d
-    velocity_command_topic: /wheelchair_diff/cmd_vel
-    goal_topic: /final_goal # /move_base_simple/goal
-    sub_goal_topic: /subgoal
-    dynamic_obstacle_message_type: MARKER_ARRAY
-    dynamic_obstacle_topic: /onboard_detector/dynamic_obstacle_velocity
-    use_global_path: true
-    threshold_distance: 1.0
 mode: LIVE

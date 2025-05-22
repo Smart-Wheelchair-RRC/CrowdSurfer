@@ -1,0 +1,6 @@
+defaults:
+    - base_dataset
+    - _self_
+
+coefficient_configuration:
+    - BEST_EXPERT

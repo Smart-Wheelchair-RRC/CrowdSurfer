@@ -5,7 +5,6 @@ import time
 
 # import message_filters
 import numpy as np
-
 import rospy
 
 # from tf.transformations import euler_from_quaternion
@@ -25,7 +24,6 @@ from sensor_msgs.msg import PointCloud2
 
 # from sensor_msgs.msg import LaserScan, PointCloud
 from std_msgs.msg import Empty, Header
-
 from tf.transformations import quaternion_matrix
 from visualization_msgs.msg import MarkerArray
 
@@ -74,14 +72,18 @@ class ROSInterface:
         self.obstacle_padding = configuration.projection.padding
         self.use_global_path = configuration.live.use_global_path
         self.max_static_obstacles = configuration.projection.max_static_obstacles
-        self.max_angular_velocity = configuration.live.omega_max
+        self.max_angular_velocity = configuration.live.max_angular_velocity
         self.max_velocity = configuration.projection.max_velocity
 
         self.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL = (
-            self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL.detach().cpu().numpy()
+            self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL.detach()
+            .cpu()
+            .numpy()
         )
         self.BERNSTEIN_POLYNOMIALS_SECOND_DIFFERENTIAL = (
-            self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_SECOND_DIFFERENTIAL.detach().cpu().numpy()
+            self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_SECOND_DIFFERENTIAL.detach()
+            .cpu()
+            .numpy()
         )
 
         self.world_frame = configuration.live.world_frame
@@ -96,7 +98,9 @@ class ROSInterface:
             # laser_scan=np.full(
             #     (2, 1080), configuration.projection.padding, dtype=np.float32
             # ),
-            point_cloud=np.full((2, 1000), configuration.projection.padding, dtype=np.float32),
+            point_cloud=np.full(
+                (2, 1000), configuration.projection.padding, dtype=np.float32
+            ),
             dynamic_obstacles=np.concatenate(
                 (
                     np.full(
@@ -138,19 +142,28 @@ class ROSInterface:
         #     configuration.live.point_cloud_topic, PointCloud, self.point_cloud_callback
         # )
 
-        if configuration.live.dynamic_obstacle_message_type is DynamicObstaclesMessageType.MARKER_ARRAY:
+        if (
+            configuration.live.dynamic_obstacle_message_type
+            is DynamicObstaclesMessageType.MARKER_ARRAY
+        ):
             self.dynamic_obstacle_subscriber = rospy.Subscriber(
                 configuration.live.dynamic_obstacle_topic,
                 MarkerArray,
                 self.dynamic_obstacle_callback,
             )
-        elif configuration.live.dynamic_obstacle_message_type is DynamicObstaclesMessageType.AGENT_STATES:
+        elif (
+            configuration.live.dynamic_obstacle_message_type
+            is DynamicObstaclesMessageType.AGENT_STATES
+        ):
             self.dynamic_obstacle_subscriber = rospy.Subscriber(
                 configuration.live.dynamic_obstacle_topic,
                 AgentStates,
                 self.dynamic_obstacle_callback,
             )
-        elif configuration.live.dynamic_obstacle_message_type is DynamicObstaclesMessageType.TRACKED_PERSONS:
+        elif (
+            configuration.live.dynamic_obstacle_message_type
+            is DynamicObstaclesMessageType.TRACKED_PERSONS
+        ):
             self.sub_dynamic = rospy.Subscriber(
                 configuration.live.dynamic_obstacle_topic,
                 TrackedPersons,
@@ -177,9 +190,15 @@ class ROSInterface:
             )
 
         # Setup Publishers
-        self.velocity_publisher = rospy.Publisher(configuration.live.velocity_command_topic, Twist, queue_size=10)
-        self.path_publisher = rospy.Publisher(configuration.live.path_topic, Path, queue_size=10)
-        self.goal_reached_publisher = rospy.Publisher("/reached_goal", Empty, queue_size=10)
+        self.velocity_publisher = rospy.Publisher(
+            configuration.live.velocity_command_topic, Twist, queue_size=10
+        )
+        self.path_publisher = rospy.Publisher(
+            configuration.live.path_topic, Path, queue_size=10
+        )
+        self.goal_reached_publisher = rospy.Publisher(
+            "/reached_goal", Empty, queue_size=10
+        )
 
         self.received_goal = False
 
@@ -199,7 +218,9 @@ class ROSInterface:
         return False
 
     def sub_goal_callback(self, sub_goal: PoseStamped):
-        self.planning_data.sub_goal = np.array([sub_goal.pose.position.x, sub_goal.pose.position.y])
+        self.planning_data.sub_goal = np.array(
+            [sub_goal.pose.position.x, sub_goal.pose.position.y]
+        )
 
     # def global_path_callback(self, global_path: Path):
     #     print("Received plan")
@@ -283,7 +304,9 @@ class ROSInterface:
     def point_cloud_callback(self, point_cloud_message: PointCloud2):
         self.planning_data.point_cloud = pointcloud2_to_xyz_array(point_cloud_message)
 
-    def _process_dynamic_obstacles_from_marker_array(self, dynamic_obstacles: MarkerArray):
+    def _process_dynamic_obstacles_from_marker_array(
+        self, dynamic_obstacles: MarkerArray
+    ):
         if len(dynamic_obstacles.markers) > 0:
             pose_array = []
             vel_array = []
@@ -303,7 +326,9 @@ class ROSInterface:
             # apply transform
             frame = dynamic_obstacles.markers[0].header.frame_id
             try:
-                (trans, rot) = self.listener.lookupTransform(frame, self.robot_base_frame, rospy.Time(0))
+                (trans, rot) = self.listener.lookupTransform(
+                    frame, self.robot_base_frame, rospy.Time(0)
+                )
             except (
                 tf.LookupException,
                 tf.ConnectivityException,
@@ -335,9 +360,13 @@ class ROSInterface:
 
         return []
 
-    def _process_dynamic_obstacles_from_agent_states(self, dynamic_obstacles: AgentStates):
+    def _process_dynamic_obstacles_from_agent_states(
+        self, dynamic_obstacles: AgentStates
+    ):
         obstacles_list = []
-        agent_states = dynamic_obstacles.agent_states if dynamic_obstacles.agent_states else []
+        agent_states = (
+            dynamic_obstacles.agent_states if dynamic_obstacles.agent_states else []
+        )
         for agent_state in agent_states:
             obstacles_list.append(
                 [
@@ -349,7 +378,9 @@ class ROSInterface:
             )
         return obstacles_list
 
-    def _process_dynamic_obstacles_from_tracked_persons(self, dynamic_obstacles: TrackedPersons):
+    def _process_dynamic_obstacles_from_tracked_persons(
+        self, dynamic_obstacles: TrackedPersons
+    ):
         obstacles_list = []
         tracks = dynamic_obstacles.tracks if dynamic_obstacles.tracks else []
         for t in tracks:
@@ -363,17 +394,29 @@ class ROSInterface:
             )
         return obstacles_list
 
-    def dynamic_obstacle_callback(self, dynamic_obstacle_message: Union[MarkerArray, AgentStates]):
+    def dynamic_obstacle_callback(
+        self, dynamic_obstacle_message: Union[MarkerArray, AgentStates]
+    ):
         if isinstance(dynamic_obstacle_message, MarkerArray):
-            obstacles_list = self._process_dynamic_obstacles_from_marker_array(dynamic_obstacle_message)
+            obstacles_list = self._process_dynamic_obstacles_from_marker_array(
+                dynamic_obstacle_message
+            )
         elif isinstance(dynamic_obstacle_message, AgentStates):
-            obstacles_list = self._process_dynamic_obstacles_from_agent_states(dynamic_obstacle_message)
+            obstacles_list = self._process_dynamic_obstacles_from_agent_states(
+                dynamic_obstacle_message
+            )
         elif isinstance(dynamic_obstacle_message, TrackedPersons):
-            obstacles_list = self._process_dynamic_obstacles_from_tracked_persons(dynamic_obstacle_message)
+            obstacles_list = self._process_dynamic_obstacles_from_tracked_persons(
+                dynamic_obstacle_message
+            )
         else:
-            raise ValueError(f"Unsupported message type {type(dynamic_obstacle_message)}")
+            raise ValueError(
+                f"Unsupported message type {type(dynamic_obstacle_message)}"
+            )
 
-        self.planning_data.dynamic_obstacles[:-1] = self.planning_data.dynamic_obstacles[1:]
+        self.planning_data.dynamic_obstacles[:-1] = (
+            self.planning_data.dynamic_obstacles[1:]
+        )
         self.planning_data.dynamic_obstacles[-1, :2, :] = self.obstacle_padding
         self.planning_data.dynamic_obstacles[-1, 2:, :] = 0
 
@@ -381,16 +424,20 @@ class ROSInterface:
         obstacles = np.array(obstacles_list)
 
         if obstacles.shape[0] > 0:
-            obstacles = obstacles[np.argsort(np.linalg.norm(obstacles[:, :2], axis=-1), axis=-1)][
-                : self.pipeline.max_projection_dynamic_obstacles
-            ]
+            obstacles = obstacles[
+                np.argsort(np.linalg.norm(obstacles[:, :2], axis=-1), axis=-1)
+            ][: self.pipeline.max_projection_dynamic_obstacles]
             obstacles = obstacles.T
 
-            self.planning_data.dynamic_obstacles[-1, :, : obstacles.shape[1]] = obstacles
+            self.planning_data.dynamic_obstacles[-1, :, : obstacles.shape[1]] = (
+                obstacles
+            )
 
         # return self.planning_data.dynamic_obstacles
 
-    def _check_dynamic_obstacle_distance_for_stopping(self, threshold_distance: float = 1.2, num_obstacles: int = 1):
+    def _check_dynamic_obstacle_distance_for_stopping(
+        self, threshold_distance: float = 1.2, num_obstacles: int = 1
+    ):
         current_obstacles = self.planning_data.dynamic_obstacles[-1, :2, :]
 
         if current_obstacles.shape[1] == 0:
@@ -421,7 +468,9 @@ class ROSInterface:
             start_time = time.perf_counter()
 
             coefficients, trajectories, scores = self.pipeline.run(
-                goal=self.planning_data.goal if self.planning_data.sub_goal is None else self.planning_data.sub_goal,
+                goal=self.planning_data.goal
+                if self.planning_data.sub_goal is None
+                else self.planning_data.sub_goal,
                 ego_velocity=self.planning_data.velocity,
                 ego_acceleration=self.planning_data.acceleration,
                 point_cloud=self.planning_data.point_cloud,
@@ -445,12 +494,16 @@ class ROSInterface:
             best_traj = trajectories[best_index]
             self.publish_path_message(best_traj)
 
-            vx_control, vy_control, ax_control, ay_control, norm_v_t, angle_v_t = self.compute_controls(
-                x_best * 0.8, y_best * 0.8
+            vx_control, vy_control, ax_control, ay_control, norm_v_t, angle_v_t = (
+                self.compute_controls(x_best * 0.8, y_best * 0.8)
             )
 
-            self.planning_data.velocity = np.array((vx_control, vy_control), dtype=np.float32)
-            self.planning_data.acceleration = np.array((ax_control, ay_control), dtype=np.float32)
+            self.planning_data.velocity = np.array(
+                (vx_control, vy_control), dtype=np.float32
+            )
+            self.planning_data.acceleration = np.array(
+                (ax_control, ay_control), dtype=np.float32
+            )
 
             # zeta = self.convert_angle(self.planning_data.odometry[2]) - self.convert_angle(angle_v_t)
             zeta = self.convert_angle(0) - self.convert_angle(angle_v_t)
@@ -550,5 +603,7 @@ def main(configuration: Configuration) -> None:
 
 if __name__ == "__main__":
     pause_physics_service = rospy.ServiceProxy("/gazebo/pause_physics", EmptyService)
-    unpause_physics_service = rospy.ServiceProxy("/gazebo/unpause_physics", EmptyService)
+    unpause_physics_service = rospy.ServiceProxy(
+        "/gazebo/unpause_physics", EmptyService
+    )
     main()

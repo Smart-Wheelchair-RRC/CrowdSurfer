@@ -11,7 +11,6 @@ class LivePipeline(Pipeline):
     def __init__(self, configuration: Configuration):
         assert configuration.mode == Mode.LIVE
         super().__init__(configuration)
-        self.time_horizon = configuration.live.time_horizon
         self.threshold_distance = configuration.live.threshold_distance
         self.padding_obstacle = configuration.live.padding
 

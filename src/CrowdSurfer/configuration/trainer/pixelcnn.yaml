@@ -1,0 +1,8 @@
+defaults:
+    - base_trainer
+    - _self_
+
+results: "results/pixelcnn"
+batch_size: 256
+learning_rate: 3e-4
+num_epochs: 1000

@@ -1,0 +1,12 @@
+defaults:
+    - base_live
+    - _self_
+
+world_frame: map
+robot_base_frame: base_link
+point_cloud_topic: /livox/pcd_2d
+velocity_command_topic: /mobile_base/cmd_vel
+goal_topic: /final_goal # /move_base_simple/goal
+sub_goal_topic: /subgoal
+dynamic_obstacle_message_type: TRACKED_PERSONS
+dynamic_obstacle_topic: /track_ped
