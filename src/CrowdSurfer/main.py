@@ -76,7 +76,6 @@ def main(configuration: Configuration) -> None:
             interface.plan()
             rate.sleep()
     elif configuration.mode is Mode.LIVE_3DLIDAR:
-        print(configuration)
         import rospy
         from ros_interface_3d_lidar import ROSInterface
 

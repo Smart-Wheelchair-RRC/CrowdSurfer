@@ -18,7 +18,7 @@ from .configuration import (
 
 
 def initialize_configuration(
-    function: Callable, configuration_name: str = "configuration"
+    function: Callable, configuration_name: str = "base"
 ) -> Callable:
     cs = ConfigStore.instance()
     cs.store(name="base_configuration", node=Configuration)
@@ -34,9 +34,9 @@ def initialize_configuration(
     cs.store(group="projection", name="base_projection", node=ProjectionConfiguration)
     cs.store(group="live", name="base_live", node=LiveConfiguration)
 
-    return hydra.main(config_path="configuration", config_name=configuration_name)(
-        function
-    )
+    return hydra.main(
+        config_path="configuration", config_name=configuration_name, version_base=None
+    )(function)
 
 
 def check_configuration(configuration: Configuration) -> None:
