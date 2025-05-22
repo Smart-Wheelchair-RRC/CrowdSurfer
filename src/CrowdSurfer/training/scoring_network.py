@@ -1,18 +1,17 @@
 import os
 from typing import Dict, Tuple
 
+import configuration
 import numpy as np
 import torch
 from accelerate import load_checkpoint_in_model
-from torch import Tensor
-
-import configuration
 from configuration import GuidanceType, Mode
 from navigation.constants import DataDirectories
 from navigation.dataset import ScoringNetworkDataset
 from navigation.model import VQVAE, CombinedPixelCNN, ScoringNetwork
 from navigation.projection_guidance import ProjectionGuidance
 from navigation.utilities import project_coefficients
+from torch import Tensor
 
 from .trainer import Trainer, TrainerMode
 
@@ -24,9 +23,15 @@ class ScoringNetworkTrainer(Trainer):
     ):
         self.num_samples = configuration.scoring_network.num_samples
         self.guidance_type = configuration.projection.guidance_type
-        self.max_projection_dynamic_obstacles = configuration.projection.max_dynamic_obstacles
-        self.max_projection_static_obstacles = configuration.projection.max_static_obstacles
-        self.use_obstacle_constraints_for_guidance = configuration.projection.use_obstacle_constraints
+        self.max_projection_dynamic_obstacles = (
+            configuration.projection.max_dynamic_obstacles
+        )
+        self.max_projection_static_obstacles = (
+            configuration.projection.max_static_obstacles
+        )
+        self.use_obstacle_constraints_for_guidance = (
+            configuration.projection.use_obstacle_constraints
+        )
         super().__init__(
             model=ScoringNetwork(
                 obstacle_embedding_dim=configuration.pixelcnn.observation_embedding_dim,
@@ -39,13 +44,19 @@ class ScoringNetworkTrainer(Trainer):
             results_directory=configuration.trainer.results_directory,
             learning_rate=configuration.trainer.learning_rate,
             batch_size=configuration.trainer.batch_size,
-            mode=TrainerMode.TRAIN if configuration.mode is Mode.TRAIN_SCORING_NETWORK else TrainerMode.INFERENCE,
+            mode=TrainerMode.TRAIN
+            if configuration.mode is Mode.TRAIN_SCORING_NETWORK
+            else TrainerMode.INFERENCE,
             validation_dataset=ScoringNetworkDataset(
                 dataset_configuration=configuration.dataset,
                 projection_configuration=configuration.projection,
                 type=DataDirectories.VALIDATION,
             )
-            if os.path.exists(os.path.join(configuration.dataset.directory, DataDirectories.VALIDATION))
+            if os.path.exists(
+                os.path.join(
+                    configuration.dataset.directory, DataDirectories.VALIDATION
+                )
+            )
             else None,
             dataloader_num_workers=configuration.trainer.dataloader_num_workers,
             dataloader_pin_memory=configuration.trainer.dataloader_pin_memory,
@@ -89,7 +100,8 @@ class ScoringNetworkTrainer(Trainer):
 
         self.projection_guidance = ProjectionGuidance(
             num_obstacles=(
-                self.max_projection_dynamic_obstacles + self.max_projection_static_obstacles
+                self.max_projection_dynamic_obstacles
+                + self.max_projection_static_obstacles
                 if self.use_obstacle_constraints_for_guidance
                 else 0
             ),
@@ -112,10 +124,12 @@ class ScoringNetworkTrainer(Trainer):
                 tracking_weight=1.2,
                 num_waypoints=configuration.dataset.trajectory_length,
                 trajectory_batch_size=self.num_samples,
-                max_outer_iterations=configuration.projection.num_priest_iterations,
+                max_outer_iterations=configuration.projection.max_outer_iterations,
             )
 
-    def _get_probability_distribution_and_embedding_from_pixelcnn(self, data: Dict[str, Tensor]):
+    def _get_probability_distribution_and_embedding_from_pixelcnn(
+        self, data: Dict[str, Tensor]
+    ):
         with torch.no_grad():
             pixelcnn_output, observation_embedding = self.pixelcnn.forward(
                 static_obstacles=data["static_obstacles"],
@@ -146,26 +160,44 @@ class ScoringNetworkTrainer(Trainer):
 
         return output_coefficients  # shape: (batch_size * num_samples, 2, 11)
 
-    def _run_projection_guidance(self, coefficients: Tensor, data: Dict[str, Tensor]) -> Tensor:
+    def _run_projection_guidance(
+        self, coefficients: Tensor, data: Dict[str, Tensor]
+    ) -> Tensor:
         return project_coefficients(
             projection_guidance=self.projection_guidance,
             coefficients=coefficients,
-            initial_ego_position_x=torch.zeros_like(data["projection_ego_velocity"][:, 0])
+            initial_ego_position_x=torch.zeros_like(
+                data["projection_ego_velocity"][:, 0]
+            )
             .to(self.accelerator.device)
             .tile(self.num_samples),
-            initial_ego_position_y=torch.zeros_like(data["projection_ego_velocity"][:, 0])
+            initial_ego_position_y=torch.zeros_like(
+                data["projection_ego_velocity"][:, 0]
+            )
             .to(self.accelerator.device)
             .tile(self.num_samples),
-            initial_ego_velocity_x=data["projection_ego_velocity"][:, 0].tile(self.num_samples),
-            initial_ego_velocity_y=data["projection_ego_velocity"][:, 0].tile(self.num_samples),
-            initial_ego_acceleration_x=torch.zeros_like(data["projection_ego_velocity"][:, 0])
+            initial_ego_velocity_x=data["projection_ego_velocity"][:, 0].tile(
+                self.num_samples
+            ),
+            initial_ego_velocity_y=data["projection_ego_velocity"][:, 0].tile(
+                self.num_samples
+            ),
+            initial_ego_acceleration_x=torch.zeros_like(
+                data["projection_ego_velocity"][:, 0]
+            )
             .to(self.accelerator.device)
             .tile(self.num_samples),
-            initial_ego_acceleration_y=torch.zeros_like(data["projection_ego_velocity"][:, 0])
+            initial_ego_acceleration_y=torch.zeros_like(
+                data["projection_ego_velocity"][:, 0]
+            )
             .to(self.accelerator.device)
             .tile(self.num_samples),
-            final_ego_position_x=data["projection_goal_position"][:, 0].tile(self.num_samples),
-            final_ego_position_y=data["projection_goal_position"][:, 1].tile(self.num_samples),
+            final_ego_position_x=data["projection_goal_position"][:, 0].tile(
+                self.num_samples
+            ),
+            final_ego_position_y=data["projection_goal_position"][:, 1].tile(
+                self.num_samples
+            ),
             obstacle_positions_x=(
                 data["projection_obstacle_positions"][:, 0].tile(self.num_samples, 1)
                 if self.use_obstacle_constraints_for_guidance
@@ -193,59 +225,73 @@ class ScoringNetworkTrainer(Trainer):
         elites_y = []
         coefficients = coefficients.unflatten(0, (-1, self.num_samples))
         for i in range(coefficients.shape[0]):
-            _, _, _, _, c_x_elite, c_y_elite, _, _, _ = self.priest_planner.run_optimization(
-                initial_x_position=0,
-                initial_y_position=0,
-                initial_x_velocity=data["projection_ego_velocity"][0, 0].cpu().numpy().item(),
-                initial_y_velocity=data["projection_ego_velocity"][0, 1].cpu().numpy().item(),
-                initial_x_acceleration=0,
-                initial_y_acceleration=0,
-                goal_x_position=data["projection_goal_position"][0, 0].cpu().numpy().item(),
-                goal_y_position=data["projection_goal_position"][0, 1].cpu().numpy().item(),
-                dynamic_obstacle_x_positions=data["projection_obstacle_positions"][
-                    0, 0, : self.max_projection_dynamic_obstacles
-                ]
-                .cpu()
-                .numpy()
-                if self.use_obstacle_constraints_for_guidance
-                else None,
-                dynamic_obstacle_y_positions=data["projection_obstacle_positions"][
-                    0, 1, : self.max_projection_dynamic_obstacles
-                ]
-                .cpu()
-                .numpy()
-                if self.use_obstacle_constraints_for_guidance
-                else None,
-                dynamic_obstacle_x_velocities=data["projection_obstacle_velocities"][
-                    0, 0, : self.max_projection_dynamic_obstacles
-                ]
-                .cpu()
-                .numpy()
-                if self.use_obstacle_constraints_for_guidance
-                else None,
-                dynamic_obstacle_y_velocities=data["projection_obstacle_velocities"][
-                    0, 1, : self.max_projection_dynamic_obstacles
-                ]
-                .cpu()
-                .numpy()
-                if self.use_obstacle_constraints_for_guidance
-                else None,
-                static_obstacle_x_positions=data["projection_obstacle_positions"][
-                    0, 0, self.max_projection_dynamic_obstacles :
-                ]
-                .cpu()
-                .numpy()
-                if self.use_obstacle_constraints_for_guidance
-                else None,
-                static_obstacle_y_positions=data["projection_obstacle_positions"][
-                    0, 1, self.max_projection_dynamic_obstacles :
-                ]
-                .cpu()
-                .numpy()
-                if self.use_obstacle_constraints_for_guidance
-                else None,
-                custom_x_coefficients=coefficients[i, :, 0, :].cpu().numpy(),
-                custom_y_coefficients=coefficients[i, :, 1, :].cpu().numpy(),
+            _, _, _, _, c_x_elite, c_y_elite, _, _, _ = (
+                self.priest_planner.run_optimization(
+                    initial_x_position=0,
+                    initial_y_position=0,
+                    initial_x_velocity=data["projection_ego_velocity"][0, 0]
+                    .cpu()
+                    .numpy()
+                    .item(),
+                    initial_y_velocity=data["projection_ego_velocity"][0, 1]
+                    .cpu()
+                    .numpy()
+                    .item(),
+                    initial_x_acceleration=0,
+                    initial_y_acceleration=0,
+                    goal_x_position=data["projection_goal_position"][0, 0]
+                    .cpu()
+                    .numpy()
+                    .item(),
+                    goal_y_position=data["projection_goal_position"][0, 1]
+                    .cpu()
+                    .numpy()
+                    .item(),
+                    dynamic_obstacle_x_positions=data["projection_obstacle_positions"][
+                        0, 0, : self.max_projection_dynamic_obstacles
+                    ]
+                    .cpu()
+                    .numpy()
+                    if self.use_obstacle_constraints_for_guidance
+                    else None,
+                    dynamic_obstacle_y_positions=data["projection_obstacle_positions"][
+                        0, 1, : self.max_projection_dynamic_obstacles
+                    ]
+                    .cpu()
+                    .numpy()
+                    if self.use_obstacle_constraints_for_guidance
+                    else None,
+                    dynamic_obstacle_x_velocities=data[
+                        "projection_obstacle_velocities"
+                    ][0, 0, : self.max_projection_dynamic_obstacles]
+                    .cpu()
+                    .numpy()
+                    if self.use_obstacle_constraints_for_guidance
+                    else None,
+                    dynamic_obstacle_y_velocities=data[
+                        "projection_obstacle_velocities"
+                    ][0, 1, : self.max_projection_dynamic_obstacles]
+                    .cpu()
+                    .numpy()
+                    if self.use_obstacle_constraints_for_guidance
+                    else None,
+                    static_obstacle_x_positions=data["projection_obstacle_positions"][
+                        0, 0, self.max_projection_dynamic_obstacles :
+                    ]
+                    .cpu()
+                    .numpy()
+                    if self.use_obstacle_constraints_for_guidance
+                    else None,
+                    static_obstacle_y_positions=data["projection_obstacle_positions"][
+                        0, 1, self.max_projection_dynamic_obstacles :
+                    ]
+                    .cpu()
+                    .numpy()
+                    if self.use_obstacle_constraints_for_guidance
+                    else None,
+                    custom_x_coefficients=coefficients[i, :, 0, :].cpu().numpy(),
+                    custom_y_coefficients=coefficients[i, :, 1, :].cpu().numpy(),
+                )
             )
             elites_x.append(c_x_elite)
             elites_y.append(c_y_elite)
@@ -261,15 +307,19 @@ class ScoringNetworkTrainer(Trainer):
         probability_distribution, observation_embedding = (
             self._get_probability_distribution_and_embedding_from_pixelcnn(data)
         )
-        coefficients = self._sample_from_vqvae(probability_distribution)  # shape: (batch_size * num_samples, 2, 11)
+        coefficients = self._sample_from_vqvae(
+            probability_distribution
+        )  # shape: (batch_size * num_samples, 2, 11)
 
         if self.guidance_type == GuidanceType.PROJECTION:
             coefficients = self._run_projection_guidance(coefficients, data)
         elif self.guidance_type == GuidanceType.PRIEST:
             coefficients = self._run_priest(coefficients, data)
 
-        trajectory_x, trajectory_y = self.projection_guidance.coefficients_to_trajectory(
-            coefficients[:, 0, :], coefficients[:, 1, :], position_only=True
+        trajectory_x, trajectory_y = (
+            self.projection_guidance.coefficients_to_trajectory(
+                coefficients[:, 0, :], coefficients[:, 1, :], position_only=True
+            )
         )
         trajectories = torch.stack(
             (trajectory_x, trajectory_y), dim=1
@@ -277,7 +327,8 @@ class ScoringNetworkTrainer(Trainer):
 
         return (
             self.model.forward(
-                coefficients.unflatten(0, (-1, self.num_samples)), condition=observation_embedding
+                coefficients.unflatten(0, (-1, self.num_samples)),
+                condition=observation_embedding,
             ),  # shape: (batch_size, num_samples)
             trajectories.unflatten(
                 0, (-1, self.num_samples)
@@ -286,4 +337,6 @@ class ScoringNetworkTrainer(Trainer):
 
     def loss(self, output: Tuple[Tensor, Tensor], data: Dict[str, Tensor]) -> Tensor:
         prediction, trajectories = output
-        return self.model.loss(prediction, target=data["expert_trajectory"], trajectories=trajectories)
+        return self.model.loss(
+            prediction, target=data["expert_trajectory"], trajectories=trajectories
+        )

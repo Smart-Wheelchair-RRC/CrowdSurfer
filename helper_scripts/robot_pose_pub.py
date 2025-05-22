@@ -8,13 +8,11 @@
 # This script is to publish the robot pose.
 # ------------------------------------------------------------------------------
 
-import rospy
 import geometry_msgs.msg
-from geometry_msgs.msg import TwistStamped, Twist, PoseStamped, Pose
-import tf
-from geometry_msgs.msg import Point
-
 import numpy as np
+import rospy
+import tf
+from geometry_msgs.msg import Point, Pose, PoseStamped, Twist, TwistStamped
 
 
 def robot_pose_pub():
@@ -22,12 +20,20 @@ def robot_pose_pub():
     tf_listener = tf.TransformListener()
     robot_pose_pub = rospy.Publisher("/robot_pose", PoseStamped, queue_size=1)
     rate = rospy.Rate(30)  # 10hz
+    world_frame = rospy.get_param("~world_frame", "/map")
+    robot_frame = rospy.get_param("~robot_frame", "/base_link")
     while not rospy.is_shutdown():
         trans = rot = None
         # look up the current pose of the base_footprint using the tf tree
         try:
-            (trans, rot) = tf_listener.lookupTransform("/map", "/base_link", rospy.Time(0))
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            (trans, rot) = tf_listener.lookupTransform(
+                world_frame, robot_frame, rospy.Time(0)
+            )
+        except (
+            tf.LookupException,
+            tf.ConnectivityException,
+            tf.ExtrapolationException,
+        ):
             rospy.logwarn("Could not get robot pose")
             trans = list([-1, -1, -1])
             rot = list([-1, -1, -1, -1])

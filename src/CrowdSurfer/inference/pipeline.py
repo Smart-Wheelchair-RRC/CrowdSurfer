@@ -1,16 +1,15 @@
 from dataclasses import dataclass
 from typing import Tuple
 
+import configuration
 import numpy as np
 import torch
 from accelerate import load_checkpoint_in_model
-from torch import Tensor
-
-import configuration
 from configuration import GuidanceType
 from navigation.model import VQVAE, CombinedPixelCNN, ScoringNetwork
 from navigation.projection_guidance import ProjectionGuidance
 from navigation.utilities import project_coefficients
+from torch import Tensor
 
 
 @dataclass
@@ -97,6 +96,11 @@ class Pipeline:
         else:
             self.scoring_network = None
 
+        inflation_radius = (
+            configuration.projection.obstacle_radius
+            + configuration.projection.robot_radius
+        )
+
         self.projection_guidance = ProjectionGuidance(
             num_obstacles=(
                 self.max_projection_dynamic_obstacles
@@ -106,8 +110,8 @@ class Pipeline:
             ),
             num_timesteps=configuration.dataset.trajectory_length,
             total_time=configuration.dataset.trajectory_time,
-            obstacle_ellipse_semi_major_axis=0.5,
-            obstacle_ellipse_semi_minor_axis=0.5,
+            obstacle_ellipse_semi_major_axis=inflation_radius,
+            obstacle_ellipse_semi_minor_axis=inflation_radius,
             max_projection_iterations=2,
             device=self.device,
         )
@@ -120,15 +124,18 @@ class Pipeline:
                 num_static_obstacles=self.max_projection_static_obstacles,
                 time_horizon=configuration.dataset.trajectory_time,
                 trajectory_length=configuration.dataset.trajectory_length,
-                tracking_weight=1.0,
-                # weight_smoothness=0.8,
-                static_obstacle_semi_minor_axis=0.8,
-                static_obstacle_semi_major_axis=0.8,
-                dynamic_obstacle_semi_minor_axis=0.8,
-                dynamic_obstacle_semi_major_axis=0.8,
+                tracking_weight=configuration.projection.tracking_weight,
+                smoothness_weight=configuration.projection.smoothness_weight,
+                static_obstacle_semi_minor_axis=inflation_radius,
+                static_obstacle_semi_major_axis=inflation_radius,
+                dynamic_obstacle_semi_minor_axis=inflation_radius,
+                dynamic_obstacle_semi_major_axis=inflation_radius,
                 num_waypoints=configuration.dataset.trajectory_length,
                 trajectory_batch_size=self.num_samples,
-                max_outer_iterations=configuration.projection.num_priest_iterations,
+                max_outer_iterations=configuration.projection.max_outer_iterations,
+                max_inner_iterations=configuration.projection.max_inner_iterations,
+                max_velocity=configuration.projection.max_velocity,
+                desired_velocity=configuration.projection.desired_velocity,
             )
 
     def _get_probability_distribution_and_embedding_from_pixelcnn(
