@@ -3,7 +3,7 @@
 import os
 import time
 
-import message_filters
+# import message_filters
 import numpy as np
 import rospy
 
@@ -18,11 +18,13 @@ from configuration import (
 )
 from geometry_msgs.msg import PoseStamped, Twist
 from inference import LivePipeline
-from nav_msgs.msg import Odometry, Path
+from nav_msgs.msg import Path
 from pedsim_msgs.msg import AgentStates, TrackedPersons  # type: ignore
-from sensor_msgs.msg import LaserScan, PointCloud
+from sensor_msgs.msg import PointCloud2
+
+# from sensor_msgs.msg import LaserScan, PointCloud
 from std_msgs.msg import Empty, Header
-from tf.transformations import euler_from_quaternion, quaternion_matrix
+from tf.transformations import quaternion_matrix
 from visualization_msgs.msg import MarkerArray
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -30,8 +32,12 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 from dataclasses import dataclass
 from typing import Optional, Union
 
-from processing import per_timestep_processing_functions as processing_functions
+# from processing import per_timestep_processing_functions as processing_functions
 from std_srvs.srv import Empty as EmptyService
+
+np.float = np.float64
+
+from ros_numpy.point_cloud2 import pointcloud2_to_xyz_array
 
 pause_physics_service = None
 unpause_physics_service = None
@@ -49,7 +55,7 @@ class PlanningData:
     velocity: np.ndarray
     acceleration: np.ndarray
     point_cloud: np.ndarray
-    laser_scan: np.ndarray
+    # laser_scan: np.ndarray
     dynamic_obstacles: np.ndarray
     update_waypoints: bool = False  # True
     sub_goal: Optional[np.ndarray] = None
@@ -66,6 +72,8 @@ class ROSInterface:
         self.obstacle_padding = configuration.projection.padding
         self.use_global_path = configuration.live.use_global_path
         self.max_static_obstacles = configuration.projection.max_static_obstacles
+        self.max_angular_velocity = configuration.live.max_angular_velocity
+        self.max_velocity = configuration.projection.max_velocity
 
         self.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL = (
             self.pipeline.projection_guidance.BERNSTEIN_POLYNOMIALS_FIRST_DIFFERENTIAL.detach()
@@ -87,9 +95,9 @@ class ROSInterface:
             goal=np.zeros((2), dtype=np.float32),
             velocity=np.zeros((2), dtype=np.float32),
             acceleration=np.zeros((2), dtype=np.float32),
-            laser_scan=np.full(
-                (2, 1080), configuration.projection.padding, dtype=np.float32
-            ),
+            # laser_scan=np.full(
+            #     (2, 1080), configuration.projection.padding, dtype=np.float32
+            # ),
             point_cloud=np.full(
                 (2, 1000), configuration.projection.padding, dtype=np.float32
             ),
@@ -111,21 +119,24 @@ class ROSInterface:
         self.goal = np.zeros((2), dtype=np.float32)
 
         # Setup Subscribers
-        self.transform_listener = tf.TransformListener()
-        self.laser_scan_subscriber = message_filters.Subscriber(
-            configuration.live.laser_scan_topic, LaserScan
-        )
-        self.point_cloud_subscriber = message_filters.Subscriber(
-            configuration.live.point_cloud_topic, PointCloud
+        # self.transform_listener = tf.TransformListener()
+        # self.laser_scan_subscriber = message_filters.Subscriber(
+        #     configuration.live.laser_scan_topic, LaserScan
+        # )
+
+        self.listener = tf.TransformListener()
+
+        self.point_cloud_subscriber = rospy.Subscriber(
+            configuration.live.point_cloud_topic, PointCloud2, self.point_cloud_callback
         )
 
-        time_synchronizer = message_filters.ApproximateTimeSynchronizer(
-            [self.point_cloud_subscriber, self.laser_scan_subscriber],
-            queue_size=20,
-            slop=1,
-            allow_headerless=True,
-        )
-        time_synchronizer.registerCallback(self.point_cloud_and_laser_scan_callback)
+        # time_synchronizer = message_filters.ApproximateTimeSynchronizer(
+        #     [self.point_cloud_subscriber, self.laser_scan_subscriber],
+        #     queue_size=20,
+        #     slop=1,
+        #     allow_headerless=True,
+        # )
+        # time_synchronizer.registerCallback(self.point_cloud_and_laser_scan_callback)
 
         # self.point_cloud_subscriber = rospy.Subscriber(
         #     configuration.live.point_cloud_topic, PointCloud, self.point_cloud_callback
@@ -224,82 +235,130 @@ class ROSInterface:
         self.received_goal = True
         # print("RECEIVED GOAL")
 
-    def _process_laser_scan(self, laser_scan_message: LaserScan):
-        max_useful_range = 50
-        maximum_points = 1080
-        ranges = np.array(laser_scan_message.ranges)
+    # def _process_laser_scan(self, laser_scan_message: LaserScan):
+    #     max_useful_range = 50
+    #     maximum_points = 1080
+    #     ranges = np.array(laser_scan_message.ranges)
 
-        # Check for zero or very small angle_increment
-        if abs(laser_scan_message.angle_increment) < 1e-10:
-            num_points = len(ranges)
-            angles = np.linspace(
-                laser_scan_message.angle_min, laser_scan_message.angle_max, num_points
-            )
-        else:
-            angles = np.arange(
-                laser_scan_message.angle_min,
-                laser_scan_message.angle_max + laser_scan_message.angle_increment,
-                laser_scan_message.angle_increment,
-            )
+    #     # Check for zero or very small angle_increment
+    #     if abs(laser_scan_message.angle_increment) < 1e-10:
+    #         num_points = len(ranges)
+    #         angles = np.linspace(
+    #             laser_scan_message.angle_min, laser_scan_message.angle_max, num_points
+    #         )
+    #     else:
+    #         angles = np.arange(
+    #             laser_scan_message.angle_min,
+    #             laser_scan_message.angle_max + laser_scan_message.angle_increment,
+    #             laser_scan_message.angle_increment,
+    #         )
 
-        # Ensure angles and ranges have the same length. If not, set as same.
-        if len(angles) != len(ranges):
-            min_len = min(len(angles), len(ranges))
-            angles = angles[:min_len]
-            ranges = ranges[:min_len]
+    #     # Ensure angles and ranges have the same length. If not, set as same.
+    #     if len(angles) != len(ranges):
+    #         min_len = min(len(angles), len(ranges))
+    #         angles = angles[:min_len]
+    #         ranges = ranges[:min_len]
 
-        valid_ranges = (
-            (ranges >= laser_scan_message.range_min)
-            & (
-                (ranges <= laser_scan_message.range_max)
-                | (np.isinf(laser_scan_message.range_max))
-            )
-            & (ranges <= max_useful_range)
-        )
-        valid_ranges_array = ranges[valid_ranges]
-        valid_angles_array = angles[valid_ranges]
+    #     valid_ranges = (
+    #         (ranges >= laser_scan_message.range_min)
+    #         & (
+    #             (ranges <= laser_scan_message.range_max)
+    #             | (np.isinf(laser_scan_message.range_max))
+    #         )
+    #         & (ranges <= max_useful_range)
+    #     )
+    #     valid_ranges_array = ranges[valid_ranges]
+    #     valid_angles_array = angles[valid_ranges]
 
-        # Pad remaining positions for consistent array length
-        padded_ranges = np.pad(
-            valid_ranges_array,
-            (0, maximum_points - len(valid_ranges_array)),
-            mode="constant",
-            constant_values=np.nan,
-        )[:maximum_points]
-        padded_angles = np.pad(
-            valid_angles_array,
-            (0, maximum_points - len(valid_angles_array)),
-            mode="constant",
-            constant_values=np.nan,
-        )[:maximum_points]
+    #     # Pad remaining positions for consistent array length
+    #     padded_ranges = np.pad(
+    #         valid_ranges_array,
+    #         (0, maximum_points - len(valid_ranges_array)),
+    #         mode="constant",
+    #         constant_values=np.nan,
+    #     )[:maximum_points]
+    #     padded_angles = np.pad(
+    #         valid_angles_array,
+    #         (0, maximum_points - len(valid_angles_array)),
+    #         mode="constant",
+    #         constant_values=np.nan,
+    #     )[:maximum_points]
 
-        return np.stack((padded_ranges, padded_angles), axis=-1)
+    #     return np.stack((padded_ranges, padded_angles), axis=-1)
 
-    def point_cloud_and_laser_scan_callback(
-        self,
-        point_cloud_message: PointCloud,
-        laser_scan_message: LaserScan,
-    ):
-        point_cloud_array = []
+    # def point_cloud_and_laser_scan_callback(
+    #     self,
+    #     point_cloud_message: PointCloud,
+    #     laser_scan_message: LaserScan,
+    # ):
+    #     point_cloud_array = []
 
-        points = point_cloud_message.points if point_cloud_message.points else []
-        for point in points:
-            point_cloud_array.append([point.x, point.y, 0])
+    #     points = point_cloud_message.points if point_cloud_message.points else []
+    #     for point in points:
+    #         point_cloud_array.append([point.x, point.y, 0])
 
-        self.planning_data.point_cloud = np.array(point_cloud_array)
+    #     self.planning_data.point_cloud = np.array(point_cloud_array)
 
-        self.planning_data.laser_scan = self._process_laser_scan(laser_scan_message)
+    #     self.planning_data.laser_scan = self._process_laser_scan(laser_scan_message)
+
+    def point_cloud_callback(self, point_cloud_message: PointCloud2):
+        self.planning_data.point_cloud = pointcloud2_to_xyz_array(point_cloud_message)
 
     def _process_dynamic_obstacles_from_marker_array(
         self, dynamic_obstacles: MarkerArray
     ):
-        obstacles_list = []
-        markers = dynamic_obstacles.markers if dynamic_obstacles.markers else []
-        for obstacle in markers:
-            obstacles_list.append(
-                [obstacle.pose.position.x, obstacle.pose.position.y, 0, 0]
-            )
-        return obstacles_list
+        if len(dynamic_obstacles.markers) > 0:
+            pose_array = []
+            vel_array = []
+
+            for obs in dynamic_obstacles.markers:
+                if obs.ns == "dynamic_obstacle_velocity_text":
+                    pose_array.append([obs.pose.position.x, obs.pose.position.y, 1])
+
+                    parts = obs.text.split(",")
+                    vx_str = parts[0].split("Vx=")[1].strip()
+                    vx = float(vx_str)
+                    vy_str = parts[1].split("Vy=")[1].strip()
+                    vy = float(vy_str)
+
+                    vel_array.append([vx, vy])
+
+            # apply transform
+            frame = dynamic_obstacles.markers[0].header.frame_id
+            try:
+                (trans, rot) = self.listener.lookupTransform(
+                    frame, self.robot_base_frame, rospy.Time(0)
+                )
+            except (
+                tf.LookupException,
+                tf.ConnectivityException,
+                tf.ExtrapolationException,
+            ):
+                print(
+                    f"Lookup failed between {frame} and {self.robot_base_frame} for dynamic obstacle velocity transformation"
+                )
+                return []
+
+            rot = quaternion_matrix(np.array(rot))
+            rot = rot[:3, :3].T
+
+            T = np.eye(3)
+            T[:2, :2] = rot[:2, :2]
+            T[:2, 2] = trans[:2]
+
+            pose_array = np.array(pose_array)
+            vel_array = np.array(vel_array)
+
+            pose_array = (T @ pose_array.T).T
+            pose_array = pose_array[:, :2]
+            vel_array = (rot[:2, :2] @ vel_array.T).T
+
+            obs_array = np.hstack((pose_array, vel_array))
+
+            # print(obs_array)
+            return obs_array
+
+        return []
 
     def _process_dynamic_obstacles_from_agent_states(
         self, dynamic_obstacles: AgentStates
@@ -354,6 +413,7 @@ class ROSInterface:
             raise ValueError(
                 f"Unsupported message type {type(dynamic_obstacle_message)}"
             )
+
         self.planning_data.dynamic_obstacles[:-1] = (
             self.planning_data.dynamic_obstacles[1:]
         )
@@ -362,14 +422,18 @@ class ROSInterface:
 
         # get closest dynamic obstacles
         obstacles = np.array(obstacles_list)
-        obstacles = obstacles[
-            np.argsort(np.linalg.norm(obstacles[:, :2], axis=-1), axis=-1)
-        ][: self.pipeline.max_projection_dynamic_obstacles]
-        obstacles = obstacles.T
 
-        self.planning_data.dynamic_obstacles[-1, :, : obstacles.shape[1]] = obstacles
+        if obstacles.shape[0] > 0:
+            obstacles = obstacles[
+                np.argsort(np.linalg.norm(obstacles[:, :2], axis=-1), axis=-1)
+            ][: self.pipeline.max_projection_dynamic_obstacles]
+            obstacles = obstacles.T
 
-        return self.planning_data.dynamic_obstacles
+            self.planning_data.dynamic_obstacles[-1, :, : obstacles.shape[1]] = (
+                obstacles
+            )
+
+        # return self.planning_data.dynamic_obstacles
 
     def _check_dynamic_obstacle_distance_for_stopping(
         self, threshold_distance: float = 1.2, num_obstacles: int = 1
@@ -409,8 +473,8 @@ class ROSInterface:
                 else self.planning_data.sub_goal,
                 ego_velocity=self.planning_data.velocity,
                 ego_acceleration=self.planning_data.acceleration,
+                laser_scan=None,
                 point_cloud=self.planning_data.point_cloud,
-                laser_scan=self.planning_data.laser_scan,
                 # occupancy_map=processing_functions.generate_occupancy_map_from_point_cloud(
                 #     self.planning_data.point_cloud
                 # ),
@@ -444,21 +508,26 @@ class ROSInterface:
             # zeta = self.convert_angle(self.planning_data.odometry[2]) - self.convert_angle(angle_v_t)
             zeta = self.convert_angle(0) - self.convert_angle(angle_v_t)
             v_t_control = norm_v_t * np.cos(zeta)
+            v_t_control = min(max(v_t_control, 0), self.max_velocity)
             # v_t_control = max((min(v_t_control, 0.8), -0.8))
 
-            omega_control = -zeta / (
-                self.num_control_samples * self.time_horizon * 0.01
-            )
+            # omega_control = -zeta / (
+            #     self.num_control_samples * self.time_horizon * 0.01
+            # )
+            omega_control = -zeta / (self.num_control_samples * 15 * 0.01)
             # omega_control = max(min(omega_control.item(), 10), -10)
+
+            if np.abs(omega_control) > self.max_angular_velocity:
+                omega_control = np.sign(omega_control) * self.max_angular_velocity
 
             cmd_vel = Twist()
 
-            if self._check_dynamic_obstacle_distance_for_stopping():
-                cmd_vel.linear.x = 0
-                cmd_vel.angular.z = omega_control * 1.5
-            else:
-                cmd_vel.linear.x = v_t_control
-                cmd_vel.angular.z = omega_control
+            # if self._check_dynamic_obstacle_distance_for_stopping():
+            #     cmd_vel.linear.x = 0
+            #     cmd_vel.angular.z = omega_control * 1.5
+            # else:
+            cmd_vel.linear.x = v_t_control
+            cmd_vel.angular.z = omega_control
 
             print("Control", v_t_control, omega_control)
             self.velocity_publisher.publish(cmd_vel)
@@ -518,7 +587,7 @@ class ROSInterface:
 def main(configuration: Configuration) -> None:
     check_configuration(configuration)
 
-    if configuration.mode is Mode.LIVE:
+    if configuration.mode is Mode.LIVE_3DLIDAR:
         rospy.init_node("Planner")
 
         interface = ROSInterface(configuration)

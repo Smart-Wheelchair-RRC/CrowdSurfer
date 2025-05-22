@@ -31,6 +31,7 @@ class Mode(Enum):
     INFERENCE_COMPLETE = auto()
     VISUALIZE = auto()
     LIVE = auto()
+    LIVE_3DLIDAR = auto()
 
 
 class DynamicObstaclesMessageType(Enum):

@@ -1,4 +1,6 @@
 # import matplotlib.pyplot as plt
+from typing import Optional
+
 import numpy as np
 import open3d as o3d
 import torch
@@ -9,12 +11,52 @@ from .pipeline import InferenceData, Pipeline
 
 class LivePipeline(Pipeline):
     def __init__(self, configuration: Configuration):
-        assert configuration.mode == Mode.LIVE
+        assert (
+            configuration.mode is Mode.LIVE or configuration.mode is Mode.LIVE_3DLIDAR
+        )
         super().__init__(configuration)
         self.threshold_distance = configuration.live.threshold_distance
         self.padding_obstacle = configuration.live.padding
+        self.use_3d_lidar = configuration.mode is Mode.LIVE_3DLIDAR
 
     def _generate_occupancy_map(
+        self, laser_scan: np.ndarray, map_height=60, map_width=60, resolution=0.1
+    ):
+        occupancy_map = np.zeros((map_height, map_width), dtype=np.int8)
+        origin = (map_width * resolution / 2, map_height * resolution / 2)
+        ranges, angles = laser_scan[:, 0], laser_scan[:, 1]
+
+        valid_indices = ~np.isnan(ranges) & ~np.isnan(angles)
+        valid_ranges = ranges[valid_indices]
+        valid_angles = angles[valid_indices]
+
+        # Checking for valid ranges, if not found, skip timestep.
+        if len(valid_ranges) != 0:
+            # Polar to Cartesian coordinates transformation
+            x = valid_ranges * np.cos(valid_angles)
+            y = valid_ranges * np.sin(valid_angles)
+
+            # Transformation to map frame
+            map_x = np.round((x + origin[0]) / resolution).astype(int)
+            map_y = np.round((y + origin[1]) / resolution).astype(int)
+
+            valid_points = (
+                (map_x >= 0) & (map_x < map_width) & (map_y >= 0) & (map_y < map_height)
+            )
+            map_x = map_x[valid_points]
+            map_y = map_y[valid_points]
+
+            if len(map_x) > 0:
+                occupancy_map[map_y, map_x] = 100  # Occupied
+
+            # PLACEHOLDER ego-agent position on map
+            ego_x = int(map_width / 2)
+            ego_y = int(map_height / 2)
+            occupancy_map[ego_y, ego_x] = 50  # Ego-agent
+
+        return occupancy_map
+
+    def _generate_occupancy_map_from_3d_lidar(
         self, point_cloud: np.ndarray, map_height=60, map_width=60, resolution=0.1
     ):
         occupancy_map = np.zeros((map_height, map_width), dtype=np.int8)
@@ -81,10 +123,20 @@ class LivePipeline(Pipeline):
         goal: np.ndarray,
         ego_velocity: np.ndarray,
         ego_acceleration: np.ndarray,
+        laser_scan: Optional[np.ndarray],
         point_cloud: np.ndarray,
         dynamic_obstacles_n_steps: np.ndarray,
     ):
-        occupancy_map = self._generate_occupancy_map(point_cloud)
+        if not self.use_3d_lidar:
+            assert laser_scan is not None, (
+                "Laser scan data is required for 2D Lidar mode."
+            )
+
+        occupancy_map = (
+            self._generate_occupancy_map_from_3d_lidar(point_cloud)
+            if self.use_3d_lidar
+            else self._generate_occupancy_map(laser_scan)
+        )
 
         point_cloud = self._process_point_cloud(point_cloud)
 
