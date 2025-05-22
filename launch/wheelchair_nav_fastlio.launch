@@ -52,11 +52,18 @@
   <node name="pure_pursuit" pkg="crowdsurfer_ros" type="pure_pursuit.py" output="screen" required="true">
     <!-- <remap from="path" to="/locomotor/global_plan"/> -->
     <remap from="path" to="/locomotor/global_plan"/>
+    <param name="lookahead"  type="double" value="2"  />
+    <param name="v_max"  type="double" value="0.3"  />
+    <param name="w_max"  type="double" value="0.4"  />
     <param name="rate"  type="double" value="20"  />
+    <param name="world_frame"  type="string" value="$(arg global_frame_id)"  />
+    <param name="robot_frame"  type="string" value="$(arg base_frame_id)"  />
   </node>
 
     <!-- Robot Pose Publisher -->
-  <node name="robot_pose_pub" pkg="crowdsurfer_ros" type="robot_pose_pub.py"/>
+  <node name="robot_pose_pub" pkg="crowdsurfer_ros" type="robot_pose_pub.py">
+    <param name="world_frame"  type="string" value="$(arg global_frame_id)"  />
+  </node>
  
   <!-- Goal visualization -->
   <node name="goal_visualize" pkg="crowdsurfer_ros" type="goal_visualize.py" output="screen" />
