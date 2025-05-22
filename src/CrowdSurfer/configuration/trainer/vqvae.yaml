@@ -1,6 +1,5 @@
 defaults:
     - base_trainer
-    - _self_
 
 results: "results/vqvae"
 batch_size: 4096

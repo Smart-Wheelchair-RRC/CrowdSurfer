@@ -1,6 +1,5 @@
 defaults:
     - base_projection
-    - _self_
 
 robot_radius: 1.1
 obstacle_radius: 0.3

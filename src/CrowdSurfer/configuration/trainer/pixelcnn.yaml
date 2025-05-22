@@ -1,6 +1,5 @@
 defaults:
     - base_trainer
-    - _self_
 
 results: "results/pixelcnn"
 batch_size: 256

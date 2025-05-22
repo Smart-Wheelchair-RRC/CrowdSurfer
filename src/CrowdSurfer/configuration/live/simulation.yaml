@@ -1,6 +1,5 @@
 defaults:
     - base_live
-    - _self_
 
 world_frame: map
 robot_base_frame: base_link
