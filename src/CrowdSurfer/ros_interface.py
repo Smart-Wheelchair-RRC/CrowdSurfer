@@ -466,7 +466,12 @@ def main(configuration: Configuration) -> None:
 
         while not rospy.is_shutdown():
             interface.plan()
-            rate.sleep()
+
+            try:
+                rate.sleep()
+            except rospy.exceptions.ROSTimeMovedBackwardsException:
+                rospy.logwarn("ROS time moved backwards, continuing...")
+                continue
     else:
         raise ValueError(f"Mode {configuration.mode} not supported for this file.")
 
