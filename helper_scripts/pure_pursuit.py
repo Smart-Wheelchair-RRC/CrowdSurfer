@@ -48,9 +48,7 @@ class PurePursuit:
     # Constructor
     def __init__(self):
         # initialize parameters
-        self.lookahead = rospy.get_param(
-            "~lookahead", 1.0
-        )  # rospy.get_param('~lookahead', 5.0)
+        self.lookahead = rospy.get_param("~lookahead", 3.0)  # rospy.get_param('~lookahead', 5.0)
         self.rate = rospy.get_param("~rate", 20.0)
         self.goal_margin = 0.9  # rospy.get_param('~goal_margin', 3.0)
 
@@ -64,12 +62,8 @@ class PurePursuit:
         self.path_sub = rospy.Subscriber("path", Path, self.path_callback)
         self.tf_listener = tf.TransformListener()
         # self.cmd_vel_pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
-        self.cnn_goal_pub = rospy.Publisher(
-            "subgoal", PoseStamped, queue_size=1
-        )  # , latch=True)
-        self.final_goal_pub = rospy.Publisher(
-            "final_goal", PoseStamped, queue_size=1
-        )  # , latch=True)
+        self.cnn_goal_pub = rospy.Publisher("subgoal", PoseStamped, queue_size=1)  # , latch=True)
+        self.final_goal_pub = rospy.Publisher("final_goal", PoseStamped, queue_size=1)  # , latch=True)
         self.world_frame = rospy.get_param("~world_frame", "/map")
         self.robot_frame = rospy.get_param("~robot_frame", "/base_link")
 
@@ -94,9 +88,7 @@ class PurePursuit:
         trans = rot = None
         # look up the current pose of the base_footprint using the tf tree
         try:
-            (trans, rot) = self.tf_listener.lookupTransform(
-                self.world_frame, self.robot_frame, rospy.Time(0)
-            )
+            (trans, rot) = self.tf_listener.lookupTransform(self.world_frame, self.robot_frame, rospy.Time(0))
         except (
             tf.LookupException,
             tf.ConnectivityException,
@@ -132,15 +124,9 @@ class PurePursuit:
         ##### YOUR CODE STARTS HERE #####
         if seg == -1:
             # find closest point on entire pathd
-            for i in range(
-                len(self.path.poses) - 1
-            ):  # gets total number of segments and iterates over them all
-                (pt, dist, s) = self.find_closest_point(
-                    x, i
-                )  # find the closest point to the robot on segment i
-                if (
-                    dist < dist_min
-                ):  # if new point is closer than the previous best, keep it as the new best point
+            for i in range(len(self.path.poses) - 1):  # gets total number of segments and iterates over them all
+                (pt, dist, s) = self.find_closest_point(x, i)  # find the closest point to the robot on segment i
+                if dist < dist_min:  # if new point is closer than the previous best, keep it as the new best point
                     pt_min = pt
                     dist_min = dist
                     seg_min = s
@@ -254,14 +240,7 @@ class PurePursuit:
                 # calculate projected distance:
                 dist_projected_x = np.dot(x - pt, v)
                 dist_projected_y = np.linalg.norm(np.cross(x - pt, v))
-                pt = (
-                    pt
-                    + (
-                        np.sqrt(self.lookahead**2 - dist_projected_y**2)
-                        + dist_projected_x
-                    )
-                    * v
-                )
+                pt = pt + (np.sqrt(self.lookahead**2 - dist_projected_y**2) + dist_projected_x) * v
 
             goal = pt
             ##### YOUR CODE ENDS HERE #####
@@ -289,9 +268,7 @@ class PurePursuit:
             trans = rot = None
             # look up the current pose of the base_footprint using the tf tree
             try:
-                (trans, rot) = self.tf_listener.lookupTransform(
-                    self.world_frame, self.robot_frame, rospy.Time(0)
-                )
+                (trans, rot) = self.tf_listener.lookupTransform(self.world_frame, self.robot_frame, rospy.Time(0))
             except (
                 tf.LookupException,
                 tf.ConnectivityException,
@@ -354,9 +331,7 @@ class PurePursuit:
         cnn_goal.pose.position.x = goal[0]
         cnn_goal.pose.position.y = goal[1]
         # cnn_goal.z = 0
-        if not np.isnan(cnn_goal.pose.position.x) and not np.isnan(
-            cnn_goal.pose.position.y
-        ):  # ensure data is valid
+        if not np.isnan(cnn_goal.pose.position.x) and not np.isnan(cnn_goal.pose.position.y):  # ensure data is valid
             self.cnn_goal_pub.publish(cnn_goal)
             print("Subgoal", goal[0], goal[1])
 

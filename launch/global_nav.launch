@@ -5,9 +5,9 @@
   <arg name="pose_initial_x" default="4"/>
   <arg name="pose_initial_y" default="8"/>
   <arg name="map_file" default="$(find robot_gazebo)/maps/gazebo_cumberland/gazebo_cumberland.yaml"/>
-  <arg name="initial_pose_x" default="4.0"/>
-  <arg name="initial_pose_y" default="8.0"/>
-  <arg name="initial_pose_a" default="0.13"/>
+  <arg name="initial_pose_x" default="0.0"/>
+  <arg name="initial_pose_y" default="0.0"/>
+  <arg name="initial_pose_a" default="0.0"/>
   <!-- Output -->
   <arg name="output" default="log"/>
   <arg name="enable_opencv" default="true"/>

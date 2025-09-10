@@ -1,0 +1,5 @@
+<launch>
+
+  <node name="ros_interface" pkg="crowdsurfer_Ros" type="ros_interface.py"/>
+
+</launch>
